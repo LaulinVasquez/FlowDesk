@@ -131,7 +131,7 @@ export function TodoApp() {
         <button className={view==="projects"?"active":""} onClick={()=>go("projects")}><Folder/>{!collapsed&&<span>Projects</span>}</button>
         {!collapsed&&<div className="project-nav">{projects.map(p=><button key={p.id} onClick={()=>{go("all");setProjectFilter(p.id)}}><i style={{background:p.color}}/><span>{p.name}</span><b>{tasks.filter(t=>t.projectId===p.id&&!t.completed).length}</b></button>)}<button onClick={addProject}><Plus/><span>New project</span></button></div>}
       </nav>
-      <div className="sidebar-bottom"><button className={view==="settings"?"active":""} onClick={()=>go("settings")}><Settings/>{!collapsed&&<span>Settings</span>}</button><div className="profile"><div className="avatar">LV</div>{!collapsed&&<div><strong>Laurin Vasquez</strong><span>alex@tideline.io</span></div>}</div></div>
+      <div className="sidebar-bottom"><button className={view==="settings"?"active":""} onClick={()=>go("settings")}><Settings/>{!collapsed&&<span>Settings</span>}</button><div className="profile"><div className="avatar">LV</div>{!collapsed&&<div><strong>Laurin Vasquez</strong><span>lv@test.com</span></div>}</div></div>
       <button className="collapse-btn" onClick={()=>setCollapsed(!collapsed)}>{collapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
     </aside>
     <main>
