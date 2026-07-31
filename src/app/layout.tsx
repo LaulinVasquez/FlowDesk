@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tideline — Focused work",
+  title: "Home",
   description: "A polished task management dashboard"
 };
 
