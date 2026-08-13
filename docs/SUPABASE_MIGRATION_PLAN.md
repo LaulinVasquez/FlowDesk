@@ -117,7 +117,7 @@ Official references:
 - The application cannot safely support multiple users.
 - There are no server-generated timestamps.
 - The existing Supabase client is unused and currently throws under valid configuration.
-- The README and package name still contain the former Tideline name in places.
+- The README and package name use the FlowDesk brand.
 
 ## Recommended FlowDesk Database Model
 
@@ -437,8 +437,8 @@ Do not create any public environment variable containing a Supabase service-role
 1. Decide which settings should synchronize.
 2. Store synchronized preferences in `user_preferences`.
 3. Retain device-only preferences in local storage.
-4. Migrate or remove the old `tideline.*` keys.
-5. Rename remaining Tideline labels to FlowDesk.
+4. Remove the legacy `tideline.*` local-storage fallback after the migration window.
+5. Keep user-facing labels aligned with the FlowDesk brand.
 
 ### Phase 8: Remove prototype storage
 

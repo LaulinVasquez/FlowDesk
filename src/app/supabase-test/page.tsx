@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function SupabaseTestPage() {
     const supabase = await createClient();
@@ -8,25 +8,23 @@ export default async function SupabaseTestPage() {
         error,
     } = await supabase.auth.getUser();
 
-    const isMissingSession = error?.message === "Auth session missing!";
+
 
     return (
-        <main style={{ padding: "2rem"}}>
-            <h1>Supabase Connection Test</h1>
-            {error && !isMissingSession ? (
-                <>
-                    <p>The Supabase request returned an error:</p>
-                    <pre>{error.message}</pre>
-                </>
-            ) : (
-                <>
-                    <p>Supabase responded succesfully.</p>
-                    <p>
-                        Current user: {""}
-                        {user ? user.email ?? user.id : "No authenticated user yet"}
-                    </p>
-                </>
-            )}
-        </main>
-    )
+    <main style={{ padding: "2rem" }}>
+      <h1>Supabase Authentication Test</h1>
+
+      {error ? (
+        <p>Error: {error.message}</p>
+      ) : user ? (
+        <>
+          <p>✅ Authenticated successfully!</p>
+          <p>Email: {user.email}</p>
+          <p>User ID: {user.id}</p>
+        </>
+      ) : (
+        <p>❌ No authenticated user.</p>
+      )};
+    </main>
+    );
 }

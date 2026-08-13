@@ -1,6 +1,6 @@
-# Tideline
+# FlowDesk
 
-Tideline is a polished, responsive task-management dashboard built with Next.js and TypeScript. Its interface takes visual inspiration from modern developer tools, combining muted surfaces, subtle borders, and a focused green accent.
+FlowDesk is a polished, responsive task-management dashboard built with Next.js and TypeScript. Its interface takes visual inspiration from modern developer tools, combining muted surfaces, subtle borders, and a focused green accent.
 
 ## Features
 
@@ -100,11 +100,11 @@ An optional model override is also supported:
 OPENAI_SEARCH_MODEL=gpt-5.6-sol
 ```
 
-API keys are read only by the server route and are never included in client-side code. If the service is unavailable, times out, or returns malformed data, Tideline automatically uses its local intent parser.
+API keys are read only by the server route and are never included in client-side code. If the service is unavailable, times out, or returns malformed data, FlowDesk automatically uses its local intent parser.
 
 ## Responsive Design
 
-Tideline supports:
+FlowDesk supports:
 
 - Mobile layouts from approximately 320px
 - Tablet layouts
