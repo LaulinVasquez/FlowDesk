@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function publicOrigin(request: Request) {
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+
+  if (forwardedHost) return `${forwardedProto}://${forwardedHost}`;
+  return new URL(request.url).origin;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
+  const origin = publicOrigin(request);
   const code = requestUrl.searchParams.get("code");
 
   if (!code) {
     console.error("OAuth callback: no code found");
 
     return NextResponse.redirect(
-      new URL("/login?error=no_code", requestUrl.origin),
+      new URL("/login?error=no_code", origin),
     );
   }
 
@@ -21,13 +30,13 @@ export async function GET(request: Request) {
     console.error("OAuth exchange failed:", error);
 
     return NextResponse.redirect(
-      new URL("/login?error=oauth_callback_failed", requestUrl.origin),
+      new URL("/login?error=oauth_callback_failed", origin),
     );
   }
 
   const user = data.user;
   if (!user) {
-    return NextResponse.redirect(new URL("/login?error=no_user", requestUrl.origin));
+    return NextResponse.redirect(new URL("/login?error=no_user", origin));
   }
 
   const metadata = user.user_metadata;
@@ -40,8 +49,8 @@ export async function GET(request: Request) {
 
   if (profileError) {
     console.error("Could not create authenticated user profile:", profileError.message);
-    return NextResponse.redirect(new URL("/login?error=profile_setup_failed", requestUrl.origin));
+    return NextResponse.redirect(new URL("/login?error=profile_setup_failed", origin));
   }
 
-  return NextResponse.redirect(new URL("/app", requestUrl.origin));
+  return NextResponse.redirect(new URL("/app", origin));
 }

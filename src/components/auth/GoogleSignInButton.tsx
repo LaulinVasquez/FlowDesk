@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export function GoogleSignInButton() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const signInStarted = useRef(false);
 
   async function signIn() {
+    if (signInStarted.current) return;
+    signInStarted.current = true;
     setLoading(true);
     setError("");
     const supabase = createClient();
@@ -19,6 +22,7 @@ export function GoogleSignInButton() {
     if (signInError) {
       setError("Could not start Google sign-in. Please try again.");
       setLoading(false);
+      signInStarted.current = false;
     }
   }
 

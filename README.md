@@ -59,6 +59,17 @@ npm run build
 npm start
 ```
 
+### Supabase OAuth on Vercel
+
+In **Supabase Dashboard → Authentication → URL Configuration**, set:
+
+- **Site URL:** your production Vercel URL, for example `https://flowdesk.example.com`
+- **Redirect URLs:** `https://flowdesk.example.com/auth/callback`
+- For Vercel preview deployments, optionally add `https://*-<team-or-account-slug>.vercel.app/**`
+- Keep `http://localhost:3000/auth/callback` as an additional redirect only for local development
+
+The application builds the OAuth callback from the domain currently open in the browser. The callback also honors Vercel's forwarded host and protocol headers, so production login returns to the same deployed domain.
+
 ### Linting
 
 ```bash
