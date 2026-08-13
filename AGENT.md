@@ -1,884 +1,263 @@
-# AGENT.md — Supabase-Inspired Todo Application
+# FlowDesk Agent Task — Authentication Foundation + Simple Home Page
 
-## Project Goal
+## Goal
 
-Build a polished, production-quality todo list application with a modern dashboard layout inspired by the visual language of Supabase.
+Finish the current Supabase authentication foundation and create a very simple public landing page for FlowDesk.
 
-The application should feel clean, fast, professional, and developer-focused. It should use a dark interface, subtle borders, spacious layouts, soft shadows, clear typography, responsive behavior, and smooth interactions.
+Do not expand into task/database persistence yet beyond the user profile foundation described below.
 
-Do not copy Supabase exactly. Use it only as visual inspiration for:
+## Current State
 
-- Dark dashboard styling
-- Sidebar navigation
-- Compact top navigation
-- Card-based layouts
-- Muted gray surfaces
-- Green accent colors
-- Soft borders and shadows
-- Clean tables and forms
-- Professional empty states
-- Smooth hover and focus states
+The following are already working:
 
-The final result should feel like a real SaaS productivity dashboard rather than a basic classroom todo list.
+* Next.js App Router
+* Supabase browser client
+* Supabase cookie-aware server client
+* Google OAuth
+* `/auth/callback`
+* PKCE code exchange
+* Supabase session persistence
+* Authenticated user can be retrieved with `supabase.auth.getUser()`
 
----
-
-## Main Deliverable
-
-Create a fully responsive todo management application where users can:
-
-- Create tasks
-- Edit tasks
-- Delete tasks
-- Mark tasks as complete or incomplete
-- Assign priorities
-- Add due dates
-- Organize tasks by project or category
-- Search tasks
-- Filter tasks
-- Sort tasks
-- View task statistics
-- Switch between light and dark mode
-- Persist tasks locally or through the existing backend, depending on the project setup
-
-The application should be visually impressive enough to include in a portfolio.
+Preserve the existing working authentication flow.
 
 ---
 
-## Design Direction
+## 1. Create the `profiles` Table
 
-### Overall Style
-
-Use a Supabase-inspired SaaS dashboard style:
-
-- Dark charcoal or near-black page background
-- Slightly lighter sidebar and content cards
-- Thin neutral borders
-- Green accent color for primary actions and active states
-- Muted text for secondary information
-- White or off-white primary text
-- Rounded corners, but avoid overly rounded “bubble” styling
-- Clean typography with strong hierarchy
-- Generous spacing without wasting screen space
-
-Recommended visual characteristics:
+Add a Supabase migration for:
 
 ```text
-Background: near-black / dark charcoal
-Sidebar: slightly lighter than the main background
-Cards: elevated dark gray surfaces
-Borders: subtle gray with low contrast
-Primary accent: Supabase-style green
-Success: green
-Warning: amber
-Danger: red
-Info: blue
+profiles
 ```
 
-Use CSS variables or design tokens for colors, spacing, typography, shadows, border radius, and transitions.
+Required columns:
+
+* `id` — UUID primary key referencing `auth.users.id`
+* `full_name` — text
+* `avatar_url` — text, nullable
+* `created_at` — timestamptz
+* `updated_at` — timestamptz
+
+The authenticated user's email should continue to come from Supabase Auth and does not need to be duplicated unless required by the existing application.
+
+### Security
+
+Enable Row-Level Security.
+
+A signed-in user must only be able to:
+
+* Read their own profile
+* Insert their own profile
+* Update their own profile
+
+Use `auth.uid()` in the policies.
+
+Do not use a service-role key in the frontend.
 
 ---
 
-## Application Layout
+## 2. Automatically Create or Update the Profile
 
-### Desktop Layout
+After a successful Google authentication, ensure a `profiles` record exists for the authenticated user.
 
-Create a dashboard with the following areas:
+Use Google/Supabase metadata where available:
 
-1. **Left Sidebar**
-   - Application logo and name
-   - Main navigation
-   - Inbox / All Tasks
-   - Today
-   - Upcoming
-   - Completed
-   - Projects or Categories
-   - Settings
-   - Collapse sidebar button
-   - User profile section near the bottom
+* `full_name`
+* `avatar_url`
 
-2. **Top Header**
-   - Current page title
-   - Breadcrumb or short description
-   - Search input
-   - Theme toggle
-   - Notifications or utility icon
-   - Primary “New Task” button
+The implementation should safely upsert the profile using the authenticated Supabase user ID.
 
-3. **Main Content Area**
-   - Summary statistic cards
-   - Filters and sorting controls
-   - Task list or table
-   - Empty state when no tasks exist
-   - Pagination or load-more behavior when useful
-
-4. **Optional Right Details Panel**
-   - Opens when a task is selected
-   - Displays task details
-   - Allows editing without leaving the page
-   - Slides in smoothly
-
-### Mobile Layout
-
-On mobile devices:
-
-- Convert the sidebar into a slide-out drawer
-- Use a compact top navigation bar
-- Keep the “New Task” action easy to access
-- Stack statistic cards vertically or in a two-column grid
-- Render task items as mobile-friendly cards instead of a wide table
-- Ensure all buttons have comfortable touch targets
-- Avoid horizontal scrolling
-- Keep forms readable and easy to complete
-
-The interface must work well at approximately:
-
-- 320px
-- 375px
-- 768px
-- 1024px
-- 1440px and above
+Do not trust a user ID supplied manually by the browser when the authenticated session can provide it.
 
 ---
 
-## Required Pages and Views
+## 3. Create a Simple Public Landing Page
 
-### 1. Dashboard / All Tasks
+Change `/` into a very simple FlowDesk landing page.
 
-Show:
+The landing page should be intentionally minimal.
 
-- Total tasks
-- Completed tasks
-- Pending tasks
-- Overdue tasks
-- Task completion percentage
-- Recent tasks
-- Upcoming deadlines
-
-Use attractive summary cards with icons, labels, values, and subtle trend or helper text.
-
-### 2. Today View
-
-Display tasks due today.
-
-Include:
-
-- Current date
-- Progress summary
-- Completed and pending sections
-- Empty state if there are no tasks for today
-
-### 3. Upcoming View
-
-Display upcoming tasks grouped by date.
-
-Suggested grouping:
-
-- Tomorrow
-- This week
-- Next week
-- Later
-
-### 4. Completed View
-
-Show completed tasks with:
-
-- Completion date
-- Project or category
-- Ability to restore a task
-- Ability to permanently delete a task
-
-### 5. Projects / Categories
-
-Allow users to:
-
-- Create a project
-- Rename a project
-- Select a project color or icon
-- View tasks assigned to that project
-- Delete a project with confirmation
-
-### 6. Settings
-
-Include:
-
-- Theme preference
-- Default task view
-- Task density preference
-- Notification preferences placeholder
-- Clear completed tasks action
-- Reset local data action with confirmation
-
----
-
-## Task Data Model
-
-Each task should support the following fields:
-
-```ts
-interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  completed: boolean;
-  priority: "low" | "medium" | "high";
-  dueDate?: string;
-  projectId?: string;
-  tags?: string[];
-  createdAt: string;
-  updatedAt: string;
-  completedAt?: string;
-}
-```
-
-Each project may use:
-
-```ts
-interface Project {
-  id: string;
-  name: string;
-  color?: string;
-  icon?: string;
-  createdAt: string;
-}
-```
-
-Keep types centralized and reusable.
-
----
-
-## Core Features
-
-### Task Creation
-
-Create a polished modal, drawer, or side panel for adding tasks.
-
-Required fields:
-
-- Task title
-- Description
-- Priority
-- Due date
-- Project or category
-- Tags
-
-Behavior:
-
-- Validate required fields
-- Prevent blank task titles
-- Display clear inline validation messages
-- Submit with keyboard support
-- Close with Escape
-- Return focus to the original trigger after closing
-- Show a success toast after task creation
-
-### Task Editing
-
-Allow users to edit tasks from:
-
-- An edit button
-- A task details panel
-- Double click or keyboard-friendly alternative, if implemented
-
-### Task Completion
-
-Users should be able to mark tasks complete using an accessible checkbox.
-
-When completed:
-
-- Animate the state change subtly
-- Apply a muted style and optional strikethrough
-- Update completion statistics
-- Show a small toast notification
-
-### Task Deletion
-
-Before deleting a task, display a confirmation dialog.
-
-The dialog should:
-
-- Blur or dim the background
-- Clearly identify the task being deleted
-- Explain that the action cannot be undone
-- Provide Cancel and Delete buttons
-- Place keyboard focus inside the dialog
-- Close with Escape
-- Use a red destructive action style
-
-### AI-Powered Search
-
-Replace the basic keyword-only search with a hybrid search experience that supports both normal text matching and natural-language queries.
-
-Users should be able to type queries such as:
-
-- `show tasks due next week`
-- `find unfinished frontend work`
-- `what have I ignored?`
-- `show urgent bugs`
-- `tasks for SmartBudget that are overdue`
-- `completed school tasks from this month`
-
-The search system should understand and extract useful intent from a query, including:
-
-- Completion status
-- Priority
-- Project or category
-- Tags
-- Relative and exact dates
-- Overdue status
-- Recently created or recently updated tasks
-- Words or concepts found in titles and descriptions
-
-#### Search Behavior
-
-Use a hybrid approach:
-
-1. Perform fast local keyword and structured filtering immediately.
-2. When AI search is available, interpret the natural-language query into structured search parameters.
-3. Apply those structured parameters to the existing task data.
-4. Never allow the AI model to directly mutate, delete, or complete tasks from the search field.
-5. Fall back gracefully to regular search when the AI service is unavailable or not configured.
-
-Represent parsed AI search intent with a predictable schema similar to:
-
-```ts
-interface TaskSearchIntent {
-  text?: string;
-  status?: "all" | "pending" | "completed";
-  priorities?: Array<"low" | "medium" | "high">;
-  projectIds?: string[];
-  tags?: string[];
-  dueFrom?: string;
-  dueTo?: string;
-  overdue?: boolean;
-  sortBy?: "relevance" | "newest" | "oldest" | "dueDate" | "priority";
-}
-```
-
-Validate all AI-generated output before using it. Ignore unsupported fields and handle malformed responses without crashing.
-
-#### AI Search Interface
-
-The search UI should feel like a premium command experience:
-
-- Place the main search field prominently in the header
-- Add a subtle sparkle or AI indicator without making the interface feel gimmicky
-- Show example prompts in the empty state
-- Display a small loading state while interpreting a natural-language query
-- Convert interpreted intent into editable filter chips
-- Let users remove or modify individual AI-generated filters
-- Include recent searches
-- Support keyboard navigation through results
-- Use `/` or `Ctrl/Cmd + K` to focus or open search
-- Press Escape to close expanded search results
-- Highlight matching words and explain why a task matched when useful
-
-Example interpreted state:
+Suggested content:
 
 ```text
-Query: "urgent SmartBudget tasks due this week"
+FlowDesk
 
-Applied filters:
-[Project: SmartBudget] [Priority: High] [Due: This week] [Pending]
+Organize your tasks.
+Focus on what matters.
+
+[Continue with Google]
 ```
 
-#### AI Integration Safety
-
-- Keep API keys on the server only
-- Do not expose secrets in client-side code
-- Use an existing backend route or create a dedicated server endpoint
-- Add rate limiting and useful error handling when a backend exists
-- Send only the minimum task metadata required for search interpretation
-- Prefer asking the AI to parse intent rather than sending the entire task database
-- Do not invent tasks or return records that do not exist locally
-- Clearly indicate when results are based on interpreted filters
-
-Search should remain fast, understandable, and fully usable without AI configuration.
-
-### Filters
-
-Include filters for:
-
-- Completion status
-- Priority
-- Project
-- Due date
-- Overdue tasks
-
-Display active filter chips and provide a “Clear filters” action.
-
-### Sorting
-
-Support sorting by:
-
-- Newest
-- Oldest
-- Due date
-- Priority
-- Alphabetical order
-
-### Persistence
-
-Use the existing project architecture.
-
-Preferred fallback order:
-
-1. Existing backend API and database
-2. Local storage
-3. In-memory state only if persistence is not yet available
-
-Do not break the existing application architecture.
-
----
-
-## Component Requirements
-
-Create reusable components where appropriate.
-
-Suggested component structure:
-
-```text
-src/
-  components/
-    layout/
-      AppShell
-      Sidebar
-      Header
-      MobileNavigation
-    tasks/
-      TaskList
-      TaskCard
-      TaskRow
-      TaskCheckbox
-      TaskForm
-      TaskDetailsPanel
-      TaskFilters
-      TaskSearch
-      TaskEmptyState
-      DeleteTaskDialog
-    dashboard/
-      StatCard
-      ProgressCard
-      UpcomingTasks
-    projects/
-      ProjectList
-      ProjectItem
-      ProjectForm
-    ui/
-      Button
-      Input
-      Select
-      Modal
-      Drawer
-      Badge
-      Tooltip
-      Toast
-      Skeleton
-      DropdownMenu
-```
-
-Keep components focused and avoid putting the entire application in one file.
-
----
-
-## UI Details
-
-### Sidebar
-
-- Highlight the active route or view
-- Use a vertical green accent line or subtle green background
-- Add hover states
-- Add tooltips when collapsed
-- Use simple icons
-- Animate collapsing smoothly
-- Preserve content usability when collapsed
-
-### Task List
-
-Desktop may use a table-like layout with columns such as:
-
-- Completion checkbox
-- Task title
-- Project
-- Priority
-- Due date
-- Status
-- Actions
-
-Mobile should use cards with the same information arranged vertically.
-
-### Priority Badges
-
-Suggested styling:
-
-- Low: muted blue or gray
-- Medium: amber
-- High: red
-
-Do not rely on color alone. Include readable labels and optionally icons.
-
-### Due Dates
-
-- Overdue dates should be clearly highlighted
-- Due today should use a noticeable but not alarming style
-- Future dates should be muted
-- Completed tasks should not appear overdue
-
-### Empty States
-
-Create attractive empty states for:
-
-- No tasks
-- No completed tasks
-- No search results
-- No tasks due today
-- No projects
-
-Each empty state should include:
-
-- Small icon or illustration
-- Clear heading
-- Short explanation
-- Relevant action button
-
-### Toast Notifications
-
-Use toast notifications for:
-
-- Task created
-- Task updated
-- Task completed
-- Task restored
-- Task deleted
-- Project created or deleted
-- Error messages
-
-Toasts should be accessible and should not block interaction.
-
-### Loading States
-
-Add:
-
-- Skeleton loaders
-- Disabled submit buttons during saving
-- Loading spinner only when necessary
-- Smooth transitions between loading and loaded states
-
-Avoid blank screens during loading.
-
----
-
-## Responsive Requirements
-
-The layout must be fully responsive.
-
-### Desktop
-
-- Fixed or sticky sidebar
-- Wide task list
-- Multi-column dashboard cards
-- Optional task details panel
-
-### Tablet
-
-- Narrower sidebar or collapsible navigation
-- Two-column statistics
-- Reduced table columns when necessary
-
-### Mobile
-
-- Drawer navigation
-- Single-column layout
-- Task cards instead of table rows
-- Sticky or floating “Add Task” action when useful
-- Filters inside a drawer or bottom sheet
-- Full-width forms and dialogs
-
-Use CSS Grid and Flexbox appropriately.
-
-Do not solve responsiveness by simply shrinking desktop elements.
-
----
-
-## Accessibility Requirements
-
-The application must include:
-
-- Semantic HTML
-- Visible keyboard focus states
-- Keyboard navigation
-- Proper labels for inputs
-- Accessible dialog behavior
-- ARIA attributes only when necessary
-- Screen-reader-friendly task status updates
-- Sufficient color contrast
-- Reduced-motion support
-- Minimum touch target sizes for mobile
-
-Users must be able to complete all major actions without a mouse.
-
----
-
-## Premium Motion and Interaction System
-
-Motion is a core product feature, not an afterthought. Create a coordinated animation language inspired by premium developer tools such as Supabase and Linear, while keeping the experience fast and professional.
-
-### Motion Principles
-
-- Motion must communicate hierarchy, state change, and spatial relationships
-- Prefer opacity, transform, and subtle scale animations for performance
-- Avoid animations that delay common actions
-- Keep interaction feedback immediate
-- Use consistent durations and easing tokens throughout the application
-- Do not animate every element simply because it is possible
-
-Create reusable motion tokens similar to:
-
-```css
-:root {
-  --motion-fast: 120ms;
-  --motion-normal: 200ms;
-  --motion-slow: 320ms;
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-```
-
-Reuse the project's existing animation library when available. If the project already uses Framer Motion, Motion, or another suitable library, use it consistently rather than adding a second animation system.
-
-### Required Motion Experiences
-
-#### Application Shell
-
-- Smooth sidebar collapse and expansion
-- Animate labels separately from the sidebar width to avoid text squashing
-- Slide the mobile navigation drawer over a dimmed or blurred backdrop
-- Transition page headings and primary content when changing views
-- Preserve layout stability during transitions
-
-#### Cards and Controls
-
-- Add a small elevation or border-glow response on hover
-- Use a subtle press state on clickable controls
-- Animate active navigation indicators between items
-- Animate dropdowns, tooltips, and menus from their trigger location
-- Avoid large scaling effects that make the UI feel playful or unstable
-
-#### Task Lifecycle
-
-- Animate newly created tasks into the correct list position
-- Animate completion with checkbox feedback, text transition, and list movement
-- Animate restored tasks back into active lists
-- Animate deletion before removing the item from the DOM
-- Use layout animations when sorting or filtering changes task positions
-- Avoid losing keyboard focus when list items move
-
-#### Search and Filters
-
-- Expand the AI search surface smoothly from the header
-- Animate search suggestions and results with short staggered entrances
-- Morph interpreted AI intent into filter chips
-- Animate filter-chip addition and removal
-- Crossfade between loading, result, empty, and error states
-- Keep typing responsive while animations are running
-
-#### Modals, Drawers, and Details Panels
-
-- Use backdrop fades and subtle blur
-- Animate panels from the edge they are visually attached to
-- Use scale plus opacity for centered dialogs
-- Restore focus after exit animations finish
-- Prevent background scrolling while overlays are open
-
-#### Feedback States
-
-- Animate skeleton loaders into loaded content without abrupt jumps
-- Slide or fade toast notifications into a consistent screen region
-- Use a restrained progress animation for async actions
-- Provide immediate success, warning, and error feedback
-
-### Performance Requirements
-
-- Prefer GPU-friendly `transform` and `opacity` animations
-- Avoid continuously animating large blurred elements
-- Do not cause layout thrashing or unnecessary rerenders
-- Keep animations smooth on mobile and lower-powered devices
-- Lazy-load heavy optional motion features when appropriate
-- Test animation behavior with long task lists
-
-### Reduced Motion
-
-Respect the user's operating-system preference:
-
-```css
-@media (prefers-reduced-motion: reduce) {
-  /* Remove nonessential movement and retain instant state feedback. */
-}
-```
-
-When reduced motion is enabled:
-
-- Remove staggered entrances
-- Replace slides and scales with instant changes or short fades
-- Keep essential focus, loading, and success feedback understandable
-- Never make functionality depend on animation
-
-Do not use excessive bouncing, parallax, spinning, or distracting background movement.
-
----
-
-## Dark and Light Modes
-
-The default appearance should use a polished dark mode inspired by Supabase.
-
-Also support light mode using the same design system.
+The page should visually match the existing FlowDesk design language.
 
 Requirements:
 
-- Use CSS variables or theme tokens
-- Save theme preference
-- Respect the system theme on first visit
-- Avoid flashes of the wrong theme during page load
-- Ensure all components remain readable in both modes
+* Clean
+* Minimal
+* Responsive
+* Dark/light theme compatible if the application already supports themes
+* No large marketing sections
+* No pricing
+* No testimonials
+* No feature grid
+* No unnecessary animations
+
+This is only a temporary/simple home page.
 
 ---
 
-## Technical Expectations
+## 4. Authentication Behavior
 
-- Follow the existing framework and architecture
-- Use TypeScript when the project supports it
-- Keep state predictable and centralized where appropriate
-- Avoid unnecessary dependencies
-- Reuse existing libraries already installed in the project
-- Keep code modular and readable
-- Add error handling
-- Avoid duplicated UI logic
-- Avoid large monolithic components
-- Use consistent naming conventions
-- Keep styles maintainable
+### Unauthenticated user
 
-Do not replace the current stack unless absolutely necessary.
+Visiting:
 
----
+```text
+/
+```
 
-## Suggested Implementation Order
+should show the landing page and Google login button.
 
-### Phase 1 — Foundation
+### Authenticated user
 
-- Review the current codebase
-- Identify the existing stack and routing structure
-- Create theme tokens
-- Build the application shell
-- Build responsive sidebar and header
-- Create reusable UI primitives
+If the user is already authenticated and visits `/`, redirect them to the existing FlowDesk application/dashboard.
 
-### Phase 2 — Task Management
+Use an appropriate authenticated route for the existing application.
 
-- Add task data model
-- Create task list
-- Add create, edit, complete, and delete functionality
-- Add confirmation dialog
-- Add task persistence
+If the current application is still rendered directly from `/`, move it to a reasonable authenticated route such as:
 
-### Phase 3 — Organization
+```text
+/app
+```
 
-- Add projects or categories
-- Add priorities
-- Add due dates
-- Add tags
-- Add Today, Upcoming, and Completed views
+or:
 
-### Phase 4 — AI Search and Filters
+```text
+/dashboard
+```
 
-- Add immediate local keyword search
-- Add a server-side AI intent-parsing endpoint
-- Validate AI responses with a structured schema
-- Convert natural-language queries into editable filters
-- Add recent searches and suggested prompts
-- Add filters and sorting
-- Add active filter chips
-- Add loading, error, fallback, and empty search states
-- Add keyboard shortcuts and result navigation
+Prefer `/app` if no routing convention already exists.
 
-### Phase 5 — Motion and Polish
-
-- Add shared motion tokens
-- Add coordinated layout and page transitions
-- Add task lifecycle and list-reordering animations
-- Add AI search and filter-chip animations
-- Add loading states
-- Add skeletons
-- Add toasts
-- Add responsive mobile cards
-- Add dark and light themes
-- Improve accessibility
-
-### Phase 6 — Validation
-
-- Test all task actions
-- Test mobile and desktop layouts
-- Test keyboard navigation
-- Test theme switching
-- Test persistence
-- Run lint and build
-- Fix console errors and warnings
+Do not rewrite the existing Todo application.
 
 ---
 
-## Acceptance Criteria
+## 5. Login Page
 
-The work is complete when:
+The existing `/login` page may remain, but simplify and polish it if necessary.
 
-- Users can create, edit, complete, restore, and delete tasks
-- Tasks can include priorities, due dates, and projects
-- Keyword search, AI natural-language search, filters, and sorting work correctly
-- AI search converts interpreted intent into visible, editable filter chips
-- Search continues working with a local fallback when AI is unavailable
-- Tasks persist after refresh
-- The design clearly feels inspired by a premium Supabase-style dashboard
-- The desktop and mobile experiences are both polished
-- The sidebar is responsive and collapsible
-- Forms and dialogs are accessible
-- Delete actions require confirmation
-- Empty states, loading states, and toasts are implemented
-- Dark mode and light mode both work
-- No horizontal scrolling occurs on mobile
-- Motion feels coordinated, responsive, and professional across the application
-- Reduced-motion preferences are fully respected
-- The application has no console errors
-- Lint and production build pass successfully
+Both:
+
+```text
+/
+```
+
+and:
+
+```text
+/login
+```
+
+may provide Google authentication.
+
+Avoid duplicating authentication logic unnecessarily. Extract a reusable Google login button/component if appropriate.
+
+Example structure:
+
+```text
+src/components/auth/
+    GoogleSignInButton.tsx
+```
 
 ---
 
-## Final Agent Instructions
+## 6. Authenticated User UI
 
-Before changing code:
+Replace the currently hardcoded FlowDesk user information where practical with the authenticated Google user/profile.
 
-1. Inspect the current project structure.
-2. Identify the framework, styling method, and existing components.
-3. Reuse existing patterns and dependencies.
-4. Avoid deleting working features unless replacement is required.
-5. Implement the todo application in small, testable steps.
+Use:
 
-During implementation:
+* Google name
+* Google avatar
+* Authenticated email
 
-- Keep the UI consistent
-- Keep components reusable
-- Test responsiveness frequently
-- Preserve accessibility
-- Avoid placeholder-quality styling
-- Use realistic sample data only when needed for development
+Do not redesign the sidebar or settings UI.
 
-After implementation:
+Only replace the hardcoded data source.
 
-1. Run the linter.
-2. Run the production build.
-3. Test the application at mobile, tablet, and desktop widths.
-4. Verify all CRUD operations.
-5. Verify task persistence.
-6. Verify keyboard navigation and dialog behavior.
-7. Report the files changed.
-8. Summarize the completed features.
-9. Mention any remaining limitations clearly.
+---
 
-The final application should look polished, intentional, responsive, and portfolio-ready.
+## 7. Logout
+
+Ensure the existing authenticated interface has a working logout action.
+
+Logout should:
+
+1. Call Supabase `signOut()`
+2. Clear the authenticated session
+3. Redirect the user to `/`
+
+---
+
+## 8. Preserve Existing Application
+
+Do not modify or redesign:
+
+* Task system
+* Projects
+* Search
+* AI search
+* Filters
+* Task modals
+* Theme system
+* Existing visual components
+
+Do not migrate tasks or projects to Supabase during this task.
+
+Current `localStorage` behavior should remain untouched for now.
+
+---
+
+## 9. Clean Up Temporary Authentication Debugging
+
+Remove temporary authentication debugging once login is verified.
+
+This includes things such as:
+
+```text
+/supabase-test
+```
+
+and temporary OAuth `console.log` statements.
+
+Keep meaningful error handling.
+
+---
+
+## 10. Verification
+
+Before considering the task complete, verify:
+
+* Google login works
+* OAuth callback succeeds
+* Session persists after refresh
+* `/` shows the landing page when logged out
+* Logged-in users are redirected to the FlowDesk app
+* Authenticated Google name/avatar/email are displayed where appropriate
+* Profile row is created in Supabase
+* User can only access their own profile through RLS
+* Logout works
+* Refresh after logout does not restore the old session
+* Existing tasks/projects continue working as before
+* `npm run lint` passes
+* TypeScript validation passes
+* Production build passes
+
+## Important
+
+Keep this milestone small.
+
+The purpose is only to leave FlowDesk with a clean authentication foundation and simple public entry point.
+
+Do **not** begin task or project persistence yet.

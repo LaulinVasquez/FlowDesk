@@ -25,11 +25,23 @@ export async function GET(request: Request) {
     );
   }
 
-  console.log("OAuth exchange succeeded");
-  console.log("User:", data.user?.email);
-  console.log("Session exists:", Boolean(data.session));
+  const user = data.user;
+  if (!user) {
+    return NextResponse.redirect(new URL("/login?error=no_user", requestUrl.origin));
+  }
 
-  return NextResponse.redirect(
-    new URL("/supabase-test", requestUrl.origin),
-  );
+  const metadata = user.user_metadata;
+  const { error: profileError } = await supabase.from("profiles").upsert({
+    id: user.id,
+    full_name: metadata.full_name || metadata.name || user.email?.split("@")[0] || "FlowDesk user",
+    avatar_url: metadata.avatar_url || metadata.picture || null,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (profileError) {
+    console.error("Could not create authenticated user profile:", profileError.message);
+    return NextResponse.redirect(new URL("/login?error=profile_setup_failed", requestUrl.origin));
+  }
+
+  return NextResponse.redirect(new URL("/app", requestUrl.origin));
 }

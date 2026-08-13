@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import {
   Archive, Bell, CalendarDays, Check, CheckCircle2, Circle, Loader2,
   Clock3, Folder, Inbox, LayoutGrid, Menu, Moon, MoreHorizontal, PanelLeftClose,
@@ -9,6 +10,7 @@ import {
 import { initialProjects, initialTasks } from "@/lib/data";
 import { Priority, Project, Task, TaskSearchIntent, View } from "@/lib/types";
 import { parseSearchIntent } from "@/lib/search";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 
 type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; projectId:string; tags:string };
 const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", projectId:"", tags:"" };
@@ -49,7 +51,9 @@ function ConfirmDialog({title,body,onCancel,onConfirm}:{title:string;body:string
   return <div className="overlay"><section className="modal confirm" role="alertdialog" aria-modal="true"><div className="danger-icon"><Trash2/></div><h2>{title}</h2><p>{body}</p><div className="modal-actions"><button ref={ref} className="btn secondary" onClick={onCancel}>Cancel</button><button className="btn danger" onClick={onConfirm}>Delete permanently</button></div></section></div>
 }
 
-export function TodoApp() {
+type AuthUser = { name: string; email: string; avatarUrl: string | null };
+
+export function TodoApp({ user }: { user: AuthUser }) {
   const [tasks,setTasks]=useState<Task[]>([]), [projects,setProjects]=useState<Project[]>([]);
   const [loaded,setLoaded]=useState(false),[view,setView]=useState<View>("all"),[query,setQuery]=useState("");
   const [aiIntent,setAiIntent]=useState<TaskSearchIntent>({}),[interpreting,setInterpreting]=useState(false),[searchSource,setSearchSource]=useState<"ai"|"local"|null>(null),[searchOpen,setSearchOpen]=useState(false),[recentSearches,setRecentSearches]=useState<string[]>([]);
@@ -131,7 +135,7 @@ export function TodoApp() {
         <button className={view==="projects"?"active":""} onClick={()=>go("projects")}><Folder/>{!collapsed&&<span>Projects</span>}</button>
         {!collapsed&&<div className="project-nav">{projects.map(p=><button key={p.id} onClick={()=>{go("all");setProjectFilter(p.id)}}><i style={{background:p.color}}/><span>{p.name}</span><b>{tasks.filter(t=>t.projectId===p.id&&!t.completed).length}</b></button>)}<button onClick={addProject}><Plus/><span>New project</span></button></div>}
       </nav>
-      <div className="sidebar-bottom"><button className={view==="settings"?"active":""} onClick={()=>go("settings")}><Settings/>{!collapsed&&<span>Settings</span>}</button><div className="profile"><div className="avatar">AM</div>{!collapsed&&<div><strong>Laurinwe Vasquez</strong><span>Laweurin@test.com</span></div>}</div></div>
+      <div className="sidebar-bottom"><button className={view==="settings"?"active":""} onClick={()=>go("settings")}><Settings/>{!collapsed&&<span>Settings</span>}</button><div className="profile">{user.avatarUrl?<Image className="avatar" src={user.avatarUrl} alt="" width={32} height={32} unoptimized referrerPolicy="no-referrer"/>:<div className="avatar">{user.name.split(/\s+/).map(part=>part[0]).join("").slice(0,2).toUpperCase()}</div>}{!collapsed&&<div><strong>{user.name}</strong><span>{user.email}</span></div>}</div><SignOutButton collapsed={collapsed}/></div>
       <button className="collapse-btn" onClick={()=>setCollapsed(!collapsed)}>{collapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
     </aside>
     <main>

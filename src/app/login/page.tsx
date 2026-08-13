@@ -1,27 +1,25 @@
-"use client";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
+import { createClient } from "@/lib/supabase/server";
 
-import { createClient } from "@/lib/supabase/client"; 
+export const metadata = { title: "Sign in" };
 
-export default function LoginPage(){
-    async function signInWithGoogle() {
-        const supabase = createClient();
+export default async function LoginPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) redirect("/app");
 
-        await supabase.auth.signInWithOAuth({
-            provider: "google",
-            options: {
-                 redirectTo: `${window.location.origin}/auth/callback`,
-            },
-        });
-    }
-
-    return (
-        <main className="flex min-h-screen items-center justify-center">
-            <button
-                onClick={signInWithGoogle}
-                className="btn primary login-button"
-            >
-                Continue with Google
-            </button>
-        </main>
-    )
+  return (
+    <main className="landing">
+      <div className="landing-card">
+        <div className="landing-brand"><span>✓</span>FlowDesk</div>
+        <p className="landing-eyebrow">WELCOME BACK</p>
+        <h1>Sign in to your workspace.</h1>
+        <p>Continue with your Google account to access FlowDesk.</p>
+        <GoogleSignInButton />
+        <Link href="/">Back to home</Link>
+      </div>
+    </main>
+  );
 }
