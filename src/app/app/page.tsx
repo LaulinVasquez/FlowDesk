@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { TodoApp } from "@/components/TodoApp";
 import { createClient } from "@/lib/supabase/server";
+import ProjectTestButton from "@/components/ProjectTestButton";
 
 export const metadata = { title: "Workspace" };
 
@@ -16,10 +17,14 @@ export default async function AppPage() {
     .maybeSingle();
 
   return (
+    <>
+    <ProjectTestButton />
     <TodoApp user={{
       name: profile?.full_name || user.user_metadata.full_name || user.user_metadata.name || "FlowDesk user",
       email: user.email || "",
       avatarUrl: profile?.avatar_url || user.user_metadata.avatar_url || user.user_metadata.picture || null,
     }} />
+
+    </>
   );
 }
