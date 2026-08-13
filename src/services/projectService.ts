@@ -1,3 +1,5 @@
+"use server";
+
 import { createClient } from "@/lib/supabase/server";
 
 export async function createProject(name: string) {
@@ -9,7 +11,7 @@ export async function createProject(name: string) {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-        throw new Error("You must be logged in to reate a project.");
+        throw new Error("You must be logged in to create a project.");
     }
 
     const { data, error } = await supabase
