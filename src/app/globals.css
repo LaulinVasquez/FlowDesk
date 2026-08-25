@@ -40,10 +40,6 @@ main{min-width:0}header{height:77px;border-bottom:1px solid var(--border);displa
 
 /* Mobile usability refinements */
 .mobile-search-btn{display:none!important}
-.project-test-panel{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 34px;border-bottom:1px solid var(--border);background:var(--surface)}
-.project-test-actions{display:flex;gap:9px;flex-wrap:wrap}.project-test-actions .btn{min-width:170px}.project-test-actions .btn svg{width:16px}
-.project-test-secondary{color:var(--text);background:var(--surface2)}.project-test-secondary:hover{border-color:var(--green);color:var(--green);background:var(--green-soft)}
-.project-test-actions .btn:disabled{cursor:not-allowed;opacity:.6;transform:none}.project-test-message{margin:0;font-size:11px;color:var(--muted)}
 
 @media(max-width:760px){
   html,body{overflow-x:hidden}

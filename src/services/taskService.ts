@@ -21,7 +21,7 @@ export async function createTask(input: CreateTaskInput) {
     } = await supabase.auth.getUser();
 
     if (userError || !user) {
-        throw new Error("Youy must be logged in to create a task.")
+        throw new Error("You must be logged in to create a task.")
     }
 
     const title = input.title.trim();
@@ -38,7 +38,8 @@ export async function createTask(input: CreateTaskInput) {
             title,
             description: input.description?.trim() || null,
             priority: input.priority ?? "medium",
-            due_date: input.tags ?? [],
+            due_date: input.dueDate ?? null,
+            tags: input.tags ?? [],
         })
         .select()
         .single();
