@@ -2,6 +2,16 @@
 
 FlowDesk is a polished, responsive task-management dashboard built with Next.js and TypeScript. Its interface takes visual inspiration from modern developer tools, combining muted surfaces, subtle borders, and a focused green accent.
 
+## Demo
+
+### Desktop landing page
+
+![FlowDesk landing page on desktop](docs/images/flowdesk-landing-desktop.png)
+
+### Compact landing page
+
+![FlowDesk landing page in a compact viewport](docs/images/flowdesk-landing-compact.png)
+
 ## Features
 
 - Create, edit, complete, restore, and delete tasks
@@ -19,7 +29,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 - Responsive desktop, tablet, and mobile layouts
 - Collapsible desktop sidebar and mobile navigation drawer
 - Confirmation dialogs, empty states, and toast notifications
-- Local persistence through browser `localStorage`
+- Authenticated, cross-device task and project persistence through Supabase
 - Keyboard focus states and reduced-motion support
 
 ## Tech Stack
@@ -28,6 +38,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 - [React](https://react.dev/)
 - [TypeScript](https://www.typescriptlang.org/)
 - [Lucide React](https://lucide.dev/) icons
+- [Supabase](https://supabase.com/) authentication and PostgreSQL persistence
 - Custom responsive CSS
 - npm
 
@@ -37,6 +48,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 
 - Node.js 18.18 or newer
 - npm
+- A Supabase project with the repository migrations applied
 
 ### Installation
 
@@ -93,9 +105,9 @@ src/
 
 ## Data Persistence
 
-Tasks, projects, and the selected theme are stored locally in the browser. Data remains available after refreshing or reopening the application on the same browser and device.
+Authenticated projects and tasks are stored in Supabase and protected by row-level security. Workspace data persists across refreshes and devices for the signed-in account.
 
-No account or external database is required. Clearing the browser's site data will remove saved workspace data.
+Device-specific preferences such as the selected theme and recent searches remain in browser `localStorage`.
 
 ## Optional AI Search
 
