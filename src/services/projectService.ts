@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { ProjectRow } from "@/lib/mappers/projectMapper";
 
 export async function createProject(name: string) {
     const supabase = await createClient()
@@ -36,11 +37,11 @@ export async function getProjects() {
 
     const {data, error} = await supabase
         .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false});
+        .select("id, owner_id, name, color, icon, created_at")
+        .order("created_at", { ascending: true});
     if ( error ) {
         throw new Error(error.message);
     }
 
-    return data;
+    return data as ProjectRow[];
 }

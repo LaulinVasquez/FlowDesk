@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import type { TaskRow } from "@/lib/mappers/taskMapper";
 
 
 export type TaskPriority = "low" | "medium" | "high";
@@ -49,5 +50,19 @@ export async function createTask(input: CreateTaskInput) {
     }
 
     return data
+}
+
+export async function getTasks() {
+    const supabase = createClient();
+    const { data, error } = await supabase
+        .from("tasks")
+        .select("id, owner_id, project_id, title, description, completed, priority, due_date, tags, completed_at, created_at, updated_at")
+        .order("created_at", { ascending: false });
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return data as TaskRow[];
 }
 

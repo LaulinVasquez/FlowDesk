@@ -1,10 +1,10 @@
 export type Priority = "low" | "medium" | "high";
 export interface Task {
-  id: string; title: string; description?: string; completed: boolean;
+  id: string; ownerId?: string; title: string; description?: string; completed: boolean;
   priority: Priority; dueDate?: string; projectId?: string; tags?: string[];
   createdAt: string; updatedAt: string; completedAt?: string;
 }
-export interface Project { id: string; name: string; color: string; createdAt: string; }
+export interface Project { id: string; ownerId?: string; name: string; color: string; createdAt: string; }
 export type View = "all" | "today" | "upcoming" | "completed" | "projects" | "settings";
 export interface TaskSearchIntent {
   text?: string;

@@ -10,6 +10,7 @@ import {
 import { Priority, Project, Task, TaskSearchIntent, View } from "@/lib/types";
 import { parseSearchIntent } from "@/lib/search";
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { useWorkspace } from "@/hooks/useWorkspace";
 
 type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; projectId:string; tags:string };
 const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", projectId:"", tags:"" };
@@ -53,8 +54,8 @@ function ConfirmDialog({title,body,onCancel,onConfirm}:{title:string;body:string
 type AuthUser = { name: string; email: string; avatarUrl: string | null };
 
 export function TodoApp({ user }: { user: AuthUser }) {
-  const [tasks,setTasks]=useState<Task[]>([]), [projects,setProjects]=useState<Project[]>([]);
-  const [loaded,setLoaded]=useState(false),[view,setView]=useState<View>("all"),[query,setQuery]=useState("");
+  const {tasks,setTasks,projects,setProjects,loading,error,retry}=useWorkspace();
+  const [preferencesLoaded,setPreferencesLoaded]=useState(false),[view,setView]=useState<View>("all"),[query,setQuery]=useState("");
   const [aiIntent,setAiIntent]=useState<TaskSearchIntent>({}),[interpreting,setInterpreting]=useState(false),[searchSource,setSearchSource]=useState<"ai"|"local"|null>(null),[searchOpen,setSearchOpen]=useState(false),[recentSearches,setRecentSearches]=useState<string[]>([]);
   const [priority,setPriority]=useState("all"),[status,setStatus]=useState("all"),[projectFilter,setProjectFilter]=useState("all"),[sort,setSort]=useState("newest");
   const [theme,setTheme]=useState<"dark"|"light">("dark"),[collapsed,setCollapsed]=useState(false),[mobileOpen,setMobileOpen]=useState(false);
@@ -62,8 +63,8 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const [toast,setToast]=useState("");
   const searchRef=useRef<HTMLInputElement>(null);
 
-  useEffect(()=>{try{const read=(key:string)=>localStorage.getItem(`flowdesk.${key}`)??localStorage.getItem(`tideline.${key}`);const t=read("tasks"),p=read("projects"),th=read("theme"),r=read("searches");setTasks(t?JSON.parse(t):[]);setProjects(p?JSON.parse(p):[]);setTheme(th==="light"?"light":"dark");setRecentSearches(r?JSON.parse(r):[])}catch{setTasks([]);setProjects([])}setLoaded(true)},[]);
-  useEffect(()=>{if(loaded){localStorage.setItem("flowdesk.tasks",JSON.stringify(tasks));localStorage.setItem("flowdesk.projects",JSON.stringify(projects));localStorage.setItem("flowdesk.theme",theme)}document.documentElement.dataset.theme=theme},[tasks,projects,theme,loaded]);
+  useEffect(()=>{try{const read=(key:string)=>localStorage.getItem(`flowdesk.${key}`)??localStorage.getItem(`tideline.${key}`);const th=read("theme"),r=read("searches");setTheme(th==="light"?"light":"dark");setRecentSearches(r?JSON.parse(r):[])}catch{setTheme("dark");setRecentSearches([])}setPreferencesLoaded(true)},[]);
+  useEffect(()=>{if(preferencesLoaded)localStorage.setItem("flowdesk.theme",theme);document.documentElement.dataset.theme=theme},[theme,preferencesLoaded]);
   useEffect(()=>{if(!toast)return;const id=setTimeout(()=>setToast(""),2600);return()=>clearTimeout(id)},[toast]);
   useEffect(()=>{
     const shortcut=(e:KeyboardEvent)=>{if(((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k")||e.key==="/"){if((e.target as HTMLElement).tagName!=="INPUT"||e.key!="/"){e.preventDefault();setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}if(e.key==="Escape"&&searchOpen){setSearchOpen(false);searchRef.current?.blur()}};
@@ -131,7 +132,8 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const nav=[{id:"all",label:"All tasks",icon:<Inbox/>},{id:"today",label:"Today",icon:<CalendarDays/>},{id:"upcoming",label:"Upcoming",icon:<Clock3/>},{id:"completed",label:"Completed",icon:<CheckCircle2/>}] as const;
   const go=(v:View)=>{setView(v);setMobileOpen(false)};
 
-  if(!loaded)return <div className="loading"><div className="brand-mark"><Check/></div><div className="skeleton wide"/><div className="skeleton"/></div>;
+  if(loading||!preferencesLoaded)return <div className="loading"><div className="brand-mark"><Check/></div><div className="skeleton wide"/><div className="skeleton"/></div>;
+  if(error)return <div className="loading workspace-error" role="alert"><div className="brand-mark"><X/></div><div><strong>We couldn&apos;t load your workspace.</strong><p>Check your connection and try again.</p></div><button className="btn primary" onClick={retry}>Try again</button></div>;
   return <div className={`app-shell ${collapsed?"is-collapsed":""}`}>
     {mobileOpen&&<button className="drawer-scrim" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}/>}
     <aside className={`sidebar ${mobileOpen?"mobile-open":""}`}>
