@@ -44,6 +44,14 @@ function TaskModal({task,projects,onClose,onSave}:{task?:Task;projects:Project[]
   </div>;
 }
 
+function ProjectModal({onClose,onSave}:{onClose:()=>void;onSave:(name:string)=>Promise<boolean>}) {
+  const [name,setName]=useState(""),[error,setError]=useState(""),[saving,setSaving]=useState(false);
+  const input=useRef<HTMLInputElement>(null);
+  useEffect(()=>{input.current?.focus();const close=(e:KeyboardEvent)=>e.key==="Escape"&&!saving&&onClose();document.addEventListener("keydown",close);return()=>document.removeEventListener("keydown",close)},[onClose,saving]);
+  const submit=async(e:FormEvent)=>{e.preventDefault();const value=name.trim();if(!value){setError("A project name is required.");input.current?.focus();return}setSaving(true);const saved=await onSave(value);if(!saved)setSaving(false)};
+  return <div className="overlay" onMouseDown={e=>e.target===e.currentTarget&&!saving&&onClose()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="project-title"><div className="modal-head"><div><span className="eyebrow">NEW PROJECT</span><h2 id="project-title">Create a project</h2></div><button className="icon-btn" onClick={onClose} disabled={saving} aria-label="Close"><X/></button></div><form onSubmit={submit}><label>Project name<input ref={input} value={name} onChange={e=>{setName(e.target.value);setError("")}} placeholder="e.g. Product launch" aria-invalid={!!error}/>{error&&<span className="error">{error}</span>}</label><div className="modal-actions"><button type="button" className="btn secondary" onClick={onClose} disabled={saving}>Cancel</button><button className="btn primary" disabled={saving}>{saving?<Loader2 className="spin"/>:<Plus/>}{saving?"Creating…":"Create project"}</button></div></form></section></div>;
+}
+
 function ConfirmDialog({title,body,onCancel,onConfirm}:{title:string;body:string;onCancel:()=>void;onConfirm:()=>Promise<void>}) {
   const ref=useRef<HTMLButtonElement>(null);
   const [deleting,setDeleting]=useState(false);
@@ -60,6 +68,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const [priority,setPriority]=useState("all"),[status,setStatus]=useState("all"),[projectFilter,setProjectFilter]=useState("all"),[sort,setSort]=useState("newest");
   const [theme,setTheme]=useState<"dark"|"light">("dark"),[collapsed,setCollapsed]=useState(false),[mobileOpen,setMobileOpen]=useState(false);
   const [modal,setModal]=useState<"new"|"edit"|null>(null),[selected,setSelected]=useState<Task|undefined>(),[deleting,setDeleting]=useState<Task|undefined>();
+  const [projectModal,setProjectModal]=useState(false);
   const [pendingTasks,setPendingTasks]=useState<Set<string>>(new Set()),[projectPending,setProjectPending]=useState(false);
   const [toast,setToast]=useState("");
   const searchRef=useRef<HTMLInputElement>(null);
@@ -120,7 +129,8 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const reportMutationError=(operation:string,error:unknown)=>{console.error(`Unable to ${operation}.`,error);notify(error instanceof Error?error.message:`Unable to ${operation}.`)};
   const save=async(d:TaskDraft)=>{const input={title:d.title,description:d.description,priority:d.priority,dueDate:d.dueDate||null,projectId:d.projectId||null,tags:d.tags.split(",").map(x=>x.trim()).filter(Boolean)};try{if(modal==="edit"&&selected){await updateTask(selected.id,input);notify("Task updated")}else{await createTask(input);notify("Task created")}setModal(null);setSelected(undefined);return true}catch(error){reportMutationError("save the task",error);return false}};
   const toggle=async(task:Task)=>{if(pendingTasks.has(task.id))return;setPendingTasks(current=>new Set(current).add(task.id));try{await setTaskCompleted(task.id,!task.completed);notify(task.completed?"Task restored":"Task completed")}catch(error){reportMutationError("update the task",error)}finally{setPendingTasks(current=>{const next=new Set(current);next.delete(task.id);return next})}};
-  const addProject=async()=>{if(projectPending)return;const name=prompt("Project name");if(!name?.trim())return;setProjectPending(true);try{await createProject(name);notify("Project created")}catch(error){reportMutationError("create the project",error)}finally{setProjectPending(false)}};
+  const addProject=()=>{if(!projectPending)setProjectModal(true)};
+  const saveProject=async(name:string)=>{setProjectPending(true);try{await createProject(name);setProjectModal(false);notify("Project created");return true}catch(error){reportMutationError("create the project",error);return false}finally{setProjectPending(false)}};
   const removeProject=async(project:Project)=>{if(projectPending||!confirm(`Delete ${project.name}? Tasks will become unassigned.`))return;setProjectPending(true);try{await deleteProject(project.id);if(projectFilter===project.id)setProjectFilter("all");notify("Project deleted")}catch(error){reportMutationError("delete the project",error)}finally{setProjectPending(false)}};
   const emptyState=()=>{
     if(query.trim())return {title:"No matching tasks",body:"Try changing your search or filters.",action:false};
@@ -180,12 +190,13 @@ export function TodoApp({ user }: { user: AuthUser }) {
       </div>
     </main>
     {modal&&<TaskModal task={modal==="edit"?selected:undefined} projects={projects} onClose={()=>{setModal(null);setSelected(undefined)}} onSave={save}/>}
+    {projectModal&&<ProjectModal onClose={()=>setProjectModal(false)} onSave={saveProject}/>}
     {deleting&&<ConfirmDialog title="Delete this task?" body={`“${deleting.title}” will be permanently removed. This action can’t be undone.`} onCancel={()=>setDeleting(undefined)} onConfirm={async()=>{try{await deleteTask(deleting.id);setDeleting(undefined);notify("Task deleted")}catch(error){reportMutationError("delete the task",error)}}}/>}
     {toast&&<div className="toast" role="status"><CheckCircle2/><span>{toast}</span></div>}
   </div>;
 }
 
-function ProjectsView({projects,tasks,add,remove,pending}:{projects:Project[];tasks:Task[];add:()=>Promise<void>;remove:(p:Project)=>Promise<void>;pending:boolean}) {
+function ProjectsView({projects,tasks,add,remove,pending}:{projects:Project[];tasks:Task[];add:()=>void;remove:(p:Project)=>Promise<void>;pending:boolean}) {
  return <section className="manage-view"><div className="manage-title"><div><h2>Your projects</h2><p>Give every task a home.</p></div>{projects.length>0&&<button className="btn primary" disabled={pending} onClick={add}>{pending?<Loader2 className="spin"/>:<Plus/>}{pending?"Working…":"New project"}</button>}</div>{projects.length?<div className="project-grid">{projects.map(p=><article className="project-card" key={p.id}><div className="folder-icon" style={{color:p.color,background:`${p.color}18`}}><Folder/></div><button className="icon-btn" disabled={pending} onClick={()=>remove(p)} aria-label={`Delete ${p.name}`}><Trash2/></button><h3>{p.name}</h3><p>{tasks.filter(t=>t.projectId===p.id&&!t.completed).length} open · {tasks.filter(t=>t.projectId===p.id&&t.completed).length} completed</p><div className="mini-progress"><i style={{width:`${tasks.filter(t=>t.projectId===p.id&&t.completed).length/Math.max(1,tasks.filter(t=>t.projectId===p.id).length)*100}%`,background:p.color}}/></div></article>)}</div>:<div className="empty"><div><Folder/></div><h3>No projects yet</h3><p>Create a project to organize related tasks.</p><button className="btn primary" disabled={pending} onClick={add}>{pending?<Loader2 className="spin"/>:<Plus/>}{pending?"Creating…":"Create project"}</button></div>}</section>
 }
 function SettingsView({theme,setTheme,clearCompleted,reset}:{theme:string;setTheme:(t:"dark"|"light")=>void;clearCompleted:()=>Promise<void>;reset:()=>Promise<void>}) {
