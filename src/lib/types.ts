@@ -4,7 +4,7 @@ export interface Task {
   priority: Priority; dueDate?: string; projectId?: string; tags?: string[];
   createdAt: string; updatedAt: string; completedAt?: string;
 }
-export interface Project { id: string; ownerId?: string; name: string; color: string; createdAt: string; }
+export interface Project { id: string; ownerId?: string; name: string; color: string; icon?: string; createdAt: string; }
 export type View = "all" | "today" | "upcoming" | "completed" | "projects" | "settings";
 export interface TaskSearchIntent {
   text?: string;

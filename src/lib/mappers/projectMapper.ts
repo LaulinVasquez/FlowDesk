@@ -22,6 +22,7 @@ export function mapProjectRow(row: ProjectRow): Project {
     ownerId: row.owner_id,
     name: row.name,
     color: row.color || colorForId(row.id),
+    icon: row.icon ?? undefined,
     createdAt: row.created_at,
   };
 }

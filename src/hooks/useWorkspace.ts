@@ -1,33 +1,43 @@
 "use client";
 
-import { Dispatch, SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { mapProjectRow } from "@/lib/mappers/projectMapper";
 import { mapTaskRow } from "@/lib/mappers/taskMapper";
 import { Project, Task } from "@/lib/types";
-import { getProjects } from "@/services/projectService";
-import { getTasks } from "@/services/taskService";
+import {
+  createProject as createProjectRow,
+  deleteProject as deleteProjectRow,
+  getProjects,
+  ProjectChanges,
+  updateProject as updateProjectRow,
+} from "@/services/projectService";
+import {
+  clearCompletedTasks,
+  createTask as createTaskRow,
+  deleteTask as deleteTaskRow,
+  getTasks,
+  setTaskCompleted as setTaskCompletedRow,
+  TaskInput,
+  updateTask as updateTaskRow,
+} from "@/services/taskService";
 
 export function useWorkspace() {
-  const [tasks, setTasksState] = useState<Task[]>([]);
-  const [projects, setProjectsState] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const tasksChangedLocally = useRef(false);
-  const projectsChangedLocally = useRef(false);
 
   useEffect(() => {
     let active = true;
-
     async function loadWorkspace() {
       setLoading(true);
       setError(false);
-
       try {
         const [projectRows, taskRows] = await Promise.all([getProjects(), getTasks()]);
         if (!active) return;
-        setProjectsState(projectRows.map(mapProjectRow));
-        setTasksState(taskRows.map(mapTaskRow));
+        setProjects(projectRows.map(mapProjectRow));
+        setTasks(taskRows.map(mapTaskRow));
       } catch (loadError) {
         console.error("Unable to load the authenticated workspace.", loadError);
         if (active) setError(true);
@@ -35,42 +45,67 @@ export function useWorkspace() {
         if (active) setLoading(false);
       }
     }
-
     loadWorkspace();
     return () => { active = false; };
   }, [attempt]);
 
-  // Mutations remain local for this milestone. Draft keys intentionally do not
-  // replace legacy flowdesk.tasks/projects or participate in initial loading.
-  const setTasks: Dispatch<SetStateAction<Task[]>> = useCallback((value) => {
-    tasksChangedLocally.current = true;
-    setTasksState(value);
+  const createProject = useCallback(async (name: string) => {
+    const project = mapProjectRow(await createProjectRow(name));
+    setProjects(current => [...current, project]);
+    return project;
   }, []);
 
-  const setProjects: Dispatch<SetStateAction<Project[]>> = useCallback((value) => {
-    projectsChangedLocally.current = true;
-    setProjectsState(value);
+  const updateProject = useCallback(async (id: string, changes: ProjectChanges) => {
+    const project = mapProjectRow(await updateProjectRow(id, changes));
+    setProjects(current => current.map(item => item.id === id ? project : item));
+    return project;
   }, []);
 
-  useEffect(() => {
-    if (!tasksChangedLocally.current) return;
-    try { localStorage.setItem("flowdesk.workspaceDraft.tasks", JSON.stringify(tasks)); }
-    catch (storageError) { console.warn("Unable to save the local task draft.", storageError); }
-  }, [tasks]);
+  const deleteProject = useCallback(async (id: string) => {
+    await deleteProjectRow(id);
+    setProjects(current => current.filter(project => project.id !== id));
+    setTasks(current => current.map(task => task.projectId === id ? { ...task, projectId: undefined } : task));
+  }, []);
 
-  useEffect(() => {
-    if (!projectsChangedLocally.current) return;
-    try { localStorage.setItem("flowdesk.workspaceDraft.projects", JSON.stringify(projects)); }
-    catch (storageError) { console.warn("Unable to save the local project draft.", storageError); }
-  }, [projects]);
+  const createTask = useCallback(async (input: TaskInput) => {
+    const task = mapTaskRow(await createTaskRow(input));
+    setTasks(current => [task, ...current]);
+    return task;
+  }, []);
+
+  const updateTask = useCallback(async (id: string, input: TaskInput) => {
+    const task = mapTaskRow(await updateTaskRow(id, input));
+    setTasks(current => current.map(item => item.id === id ? task : item));
+    return task;
+  }, []);
+
+  const setTaskCompleted = useCallback(async (id: string, completed: boolean) => {
+    const task = mapTaskRow(await setTaskCompletedRow(id, completed));
+    setTasks(current => current.map(item => item.id === id ? task : item));
+    return task;
+  }, []);
+
+  const deleteTask = useCallback(async (id: string) => {
+    await deleteTaskRow(id);
+    setTasks(current => current.filter(task => task.id !== id));
+  }, []);
+
+  const clearCompleted = useCallback(async () => {
+    await clearCompletedTasks();
+    setTasks(current => current.filter(task => !task.completed));
+  }, []);
+
+  const resetWorkspace = useCallback(async () => {
+    await Promise.all(tasks.map(task => deleteTaskRow(task.id)));
+    await Promise.all(projects.map(project => deleteProjectRow(project.id)));
+    setTasks([]);
+    setProjects([]);
+  }, [projects, tasks]);
 
   return {
-    tasks,
-    setTasks,
-    projects,
-    setProjects,
-    loading,
-    error,
+    tasks, projects, loading, error,
+    createProject, updateProject, deleteProject,
+    createTask, updateTask, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
     retry: () => setAttempt(value => value + 1),
   };
 }
