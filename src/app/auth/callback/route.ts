@@ -42,6 +42,7 @@ export async function GET(request: Request) {
     id: user.id,
     full_name: metadata.full_name || metadata.name || user.email?.split("@")[0] || "FlowDesk user",
     avatar_url: metadata.avatar_url || metadata.picture || null,
+    email: user.email?.toLowerCase() || null,
     updated_at: new Date().toISOString(),
   });
 

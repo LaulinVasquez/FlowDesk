@@ -1,4 +1,4 @@
-import { Priority, Task } from "@/lib/types";
+import { Priority, Task, TaskStage } from "@/lib/types";
 
 export interface TaskRow {
   id: string;
@@ -12,6 +12,8 @@ export interface TaskRow {
   due_time: string | null;
   due_at: string | null;
   reminder_minutes: 15 | 60 | 1440 | null;
+  assigned_user_id: string | null;
+  stage: TaskStage;
   tags: string[] | null;
   completed_at: string | null;
   created_at: string;
@@ -31,6 +33,8 @@ export function mapTaskRow(row: TaskRow): Task {
     dueTime: row.due_time ?? undefined,
     dueAt: row.due_at ?? undefined,
     reminderMinutes: row.reminder_minutes ?? undefined,
+    assignedUserId: row.assigned_user_id ?? undefined,
+    stage: row.stage,
     tags: row.tags ?? [],
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import type { TaskRow } from "@/lib/mappers/taskMapper";
+import type { TaskStage } from "@/lib/types";
 
 export type TaskPriority = "low" | "medium" | "high";
 export interface TaskInput {
@@ -11,6 +12,7 @@ export interface TaskInput {
   dueTime?: string | null;
   dueAt?: string | null;
   reminderMinutes?: 15 | 60 | 1440 | null;
+  assignedUserId?: string | null;
   tags?: string[];
 }
 
@@ -21,12 +23,12 @@ async function authenticatedClient() {
   return { supabase, user };
 }
 
-const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, due_at, reminder_minutes, tags, completed_at, created_at, updated_at";
+const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, due_at, reminder_minutes, assigned_user_id, stage, tags, completed_at, created_at, updated_at";
 
 function taskValues(input: TaskInput) {
   const title = input.title.trim();
   if (!title) throw new Error("Task title is required.");
-  return { project_id: input.projectId || null, title, description: input.description?.trim() || null, priority: input.priority ?? "medium", due_date: input.dueDate || null, due_time: input.dueDate ? input.dueTime || null : null, due_at: input.dueAt || null, reminder_minutes: input.reminderMinutes || null, tags: input.tags ?? [] };
+  return { project_id: input.projectId || null, title, description: input.description?.trim() || null, priority: input.priority ?? "medium", due_date: input.dueDate || null, due_time: input.dueDate ? input.dueTime || null : null, due_at: input.dueAt || null, reminder_minutes: input.reminderMinutes || null, assigned_user_id: input.assignedUserId || null, tags: input.tags ?? [] };
 }
 
 export async function getTasks() {
@@ -70,4 +72,11 @@ export async function clearCompletedTasks() {
   const { supabase } = await authenticatedClient();
   const { error } = await supabase.from("tasks").delete().eq("completed", true);
   if (error) throw new Error(error.message);
+}
+
+export async function updateTaskStage(id: string, stage: TaskStage) {
+  const { supabase } = await authenticatedClient();
+  const { data, error } = await supabase.rpc("update_assigned_task_stage", { task_id: id, next_stage: stage });
+  if (error) throw new Error(error.message);
+  return data as TaskRow;
 }

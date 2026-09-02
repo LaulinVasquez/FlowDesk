@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { mapProjectRow } from "@/lib/mappers/projectMapper";
 import { mapTaskRow } from "@/lib/mappers/taskMapper";
-import { Project, Task } from "@/lib/types";
+import { Connection, Project, Task, TaskStage } from "@/lib/types";
+import { getConnections, removeConnection as removeConnectionRow, requestConnection as requestConnectionRow, respondToConnection } from "@/services/connectionService";
 import {
   createProject as createProjectRow,
   deleteProject as deleteProjectRow,
@@ -19,11 +20,13 @@ import {
   setTaskCompleted as setTaskCompletedRow,
   TaskInput,
   updateTask as updateTaskRow,
+  updateTaskStage as updateTaskStageRow,
 } from "@/services/taskService";
 
 export function useWorkspace() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -34,10 +37,11 @@ export function useWorkspace() {
       setLoading(true);
       setError(false);
       try {
-        const [projectRows, taskRows] = await Promise.all([getProjects(), getTasks()]);
+        const [projectRows, taskRows, connectionRows] = await Promise.all([getProjects(), getTasks(), getConnections()]);
         if (!active) return;
         setProjects(projectRows.map(mapProjectRow));
         setTasks(taskRows.map(mapTaskRow));
+        setConnections(connectionRows);
       } catch (loadError) {
         console.error("Unable to load the authenticated workspace.", loadError);
         if (active) setError(true);
@@ -85,6 +89,17 @@ export function useWorkspace() {
     return task;
   }, []);
 
+  const updateTaskStage = useCallback(async (id: string, stage: TaskStage) => {
+    const task = mapTaskRow(await updateTaskStageRow(id, stage));
+    setTasks(current => current.map(item => item.id === id ? task : item));
+    return task;
+  }, []);
+
+  const refreshConnections = useCallback(async () => setConnections(await getConnections()), []);
+  const requestConnection = useCallback(async (email: string) => { await requestConnectionRow(email); await refreshConnections(); }, [refreshConnections]);
+  const answerConnection = useCallback(async (id: string, response: "accepted" | "rejected") => { await respondToConnection(id, response); await refreshConnections(); }, [refreshConnections]);
+  const removeConnection = useCallback(async (id: string) => { await removeConnectionRow(id); setConnections(current => current.filter(item => item.id !== id)); }, []);
+
   const deleteTask = useCallback(async (id: string) => {
     await deleteTaskRow(id);
     setTasks(current => current.filter(task => task.id !== id));
@@ -103,9 +118,10 @@ export function useWorkspace() {
   }, [projects, tasks]);
 
   return {
-    tasks, projects, loading, error,
+    tasks, projects, connections, loading, error,
     createProject, updateProject, deleteProject,
-    createTask, updateTask, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
+    createTask, updateTask, updateTaskStage, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
+    requestConnection, answerConnection, removeConnection,
     retry: () => setAttempt(value => value + 1),
   };
 }

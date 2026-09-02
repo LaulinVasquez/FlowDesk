@@ -31,6 +31,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 - Confirmation dialogs, empty states, and toast notifications
 - Authenticated, cross-device task and project persistence through Supabase
 - In-app reminders and optional standards-based browser push notifications
+- Exact-email user connections, task assignment, and reviewed/approved workflows
 - Keyboard focus states and reduced-motion support
 
 ## Tech Stack
@@ -127,6 +128,18 @@ src/
 Authenticated projects and tasks are stored in Supabase and protected by row-level security. Workspace data persists across refreshes and devices for the signed-in account.
 
 Device-specific preferences such as the selected theme and recent searches remain in browser `localStorage`.
+
+## Collaboration workflow
+
+Apply `20260902000500_add_user_connections_and_task_workflow.sql` before deploying the collaboration UI. Users connect from the People tab by entering another FlowDesk user’s exact email address. The recipient must accept the request before tasks can be assigned.
+
+Assigned tasks follow this workflow:
+
+```text
+Assigned → Working → Reviewed → Approved
+```
+
+The assignee starts work and submits it for review. The task owner approves reviewed work. Database policies and constrained RPC functions enforce participant access and workflow permissions; other users are not exposed through a browsable directory.
 
 ## Optional AI Search
 

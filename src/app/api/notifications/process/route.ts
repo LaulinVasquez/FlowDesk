@@ -12,17 +12,18 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient();
     const push = configureWebPush();
     const now = new Date();
-    const { data: tasks, error } = await supabase.from("tasks").select("id, owner_id, title, due_at, reminder_minutes").eq("completed", false).not("due_at", "is", null).lte("due_at", new Date(now.getTime() + 86_400_000).toISOString()).gte("due_at", new Date(now.getTime() - 86_400_000).toISOString());
+    const { data: tasks, error } = await supabase.from("tasks").select("id, owner_id, assigned_user_id, title, due_at, reminder_minutes").eq("completed", false).not("due_at", "is", null).lte("due_at", new Date(now.getTime() + 86_400_000).toISOString()).gte("due_at", new Date(now.getTime() - 86_400_000).toISOString());
     if (error) throw error;
     let sent = 0;
     for (const task of tasks || []) {
-      const { data: profile } = await supabase.from("profiles").select("default_reminder_minutes").eq("id", task.owner_id).single();
+      const recipientId = task.assigned_user_id || task.owner_id;
+      const { data: profile } = await supabase.from("profiles").select("default_reminder_minutes").eq("id", recipientId).single();
       const minutes = task.reminder_minutes || profile?.default_reminder_minutes || 60;
       if (!task.due_at || !reminderIsDue(task.due_at, minutes, now)) continue;
       const reminderAt = reminderTime(task.due_at, minutes).toISOString();
-      const { data: subscriptions } = await supabase.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", task.owner_id);
+      const { data: subscriptions } = await supabase.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", recipientId);
       for (const subscription of subscriptions || []) {
-        const { data: claim, error: claimError } = await supabase.from("notification_deliveries").insert({ user_id: task.owner_id, task_id: task.id, subscription_id: subscription.id, reminder_at: reminderAt }).select("id").single();
+        const { data: claim, error: claimError } = await supabase.from("notification_deliveries").insert({ user_id: recipientId, task_id: task.id, subscription_id: subscription.id, reminder_at: reminderAt }).select("id").single();
         if (claimError?.code === "23505") continue;
         if (claimError || !claim) throw claimError || new Error("Unable to claim notification delivery.");
         try {
