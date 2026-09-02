@@ -9,6 +9,7 @@ export interface TaskRow {
   completed: boolean;
   priority: Priority;
   due_date: string | null;
+  due_time: string | null;
   tags: string[] | null;
   completed_at: string | null;
   created_at: string;
@@ -25,6 +26,7 @@ export function mapTaskRow(row: TaskRow): Task {
     completed: row.completed,
     priority: row.priority,
     dueDate: row.due_date ?? undefined,
+    dueTime: row.due_time ?? undefined,
     tags: row.tags ?? [],
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,

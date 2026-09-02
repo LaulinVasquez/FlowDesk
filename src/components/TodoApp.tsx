@@ -11,9 +11,10 @@ import { Priority, Project, Task, TaskSearchIntent, View } from "@/lib/types";
 import { parseSearchIntent } from "@/lib/search";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { useWorkspace } from "@/hooks/useWorkspace";
+import { ReminderPanel } from "@/components/ReminderPanel";
 
-type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; projectId:string; tags:string };
-const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", projectId:"", tags:"" };
+type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; dueTime:string; projectId:string; tags:string };
+const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", dueTime:"", projectId:"", tags:"" };
 const projectColors = ["#3ecf8e", "#60a5fa", "#a78bfa", "#f59e0b", "#f87171", "#22d3ee"];
 const today = () => new Date().toISOString().slice(0,10);
 const fmt = (date?:string) => date ? new Intl.DateTimeFormat("en",{month:"short",day:"numeric"}).format(new Date(`${date}T12:00:00`)) : "No date";
@@ -23,7 +24,7 @@ function StatCard({label,value,helper,icon}:{label:string;value:string|number;he
 }
 
 function TaskModal({task,projects,onClose,onSave}:{task?:Task;projects:Project[];onClose:()=>void;onSave:(d:TaskDraft)=>Promise<boolean>}) {
-  const [draft,setDraft]=useState<TaskDraft>(task ? {title:task.title,description:task.description||"",priority:task.priority,dueDate:task.dueDate||"",projectId:task.projectId||"",tags:(task.tags||[]).join(", ")} : emptyDraft);
+  const [draft,setDraft]=useState<TaskDraft>(task ? {title:task.title,description:task.description||"",priority:task.priority,dueDate:task.dueDate||"",dueTime:task.dueTime?.slice(0,5)||"",projectId:task.projectId||"",tags:(task.tags||[]).join(", ")} : emptyDraft);
   const [error,setError]=useState(""),[saving,setSaving]=useState(false); const input=useRef<HTMLInputElement>(null);
   useEffect(()=>{input.current?.focus(); const close=(e:KeyboardEvent)=>e.key==="Escape"&&onClose(); document.addEventListener("keydown",close); return()=>document.removeEventListener("keydown",close)},[onClose]);
   const submit=async(e:FormEvent)=>{e.preventDefault();if(!draft.title.trim()){setError("A task title is required.");input.current?.focus();return}setSaving(true);await onSave({...draft,title:draft.title.trim()});setSaving(false)};
@@ -35,7 +36,8 @@ function TaskModal({task,projects,onClose,onSave}:{task?:Task;projects:Project[]
         <label>Description<textarea value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})} placeholder="Add context, notes, or a link…" rows={4}/></label>
         <div className="form-grid">
           <label>Priority<select value={draft.priority} onChange={e=>setDraft({...draft,priority:e.target.value as Priority})}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-          <label>Due date<input type="date" value={draft.dueDate} onChange={e=>setDraft({...draft,dueDate:e.target.value})}/></label>
+          <label>Due date<input type="date" value={draft.dueDate} onChange={e=>setDraft({...draft,dueDate:e.target.value,dueTime:e.target.value?draft.dueTime:""})}/></label>
+          <label>Due time (optional)<input type="time" value={draft.dueTime} disabled={!draft.dueDate} onChange={e=>setDraft({...draft,dueTime:e.target.value})}/></label>
           <label>Project<select value={draft.projectId} onChange={e=>setDraft({...draft,projectId:e.target.value})}><option value="">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <label>Tags<input value={draft.tags} onChange={e=>setDraft({...draft,tags:e.target.value})} placeholder="design, review"/></label>
         </div>
@@ -128,7 +130,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const removeIntent=(key:string)=>setAiIntent(current=>key==="dates"?{...current,dueFrom:undefined,dueTo:undefined}:{...current,[key]:undefined});
   const commitSearch=(value=query)=>{if(!value.trim())return;const next=[value.trim(),...recentSearches.filter(item=>item!==value.trim())].slice(0,5);setRecentSearches(next);localStorage.setItem("flowdesk.searches",JSON.stringify(next));setSearchOpen(false)};
   const reportMutationError=(operation:string,error:unknown)=>{console.error(`Unable to ${operation}.`,error);notify(error instanceof Error?error.message:`Unable to ${operation}.`)};
-  const save=async(d:TaskDraft)=>{const input={title:d.title,description:d.description,priority:d.priority,dueDate:d.dueDate||null,projectId:d.projectId||null,tags:d.tags.split(",").map(x=>x.trim()).filter(Boolean)};try{if(modal==="edit"&&selected){await updateTask(selected.id,input);notify("Task updated")}else{await createTask(input);notify("Task created")}setModal(null);setSelected(undefined);return true}catch(error){reportMutationError("save the task",error);return false}};
+  const save=async(d:TaskDraft)=>{const input={title:d.title,description:d.description,priority:d.priority,dueDate:d.dueDate||null,dueTime:d.dueDate&&d.dueTime?d.dueTime:null,projectId:d.projectId||null,tags:d.tags.split(",").map(x=>x.trim()).filter(Boolean)};try{if(modal==="edit"&&selected){await updateTask(selected.id,input);notify("Task updated")}else{await createTask(input);notify("Task created")}setModal(null);setSelected(undefined);return true}catch(error){reportMutationError("save the task",error);return false}};
   const toggle=async(task:Task)=>{if(pendingTasks.has(task.id))return;setPendingTasks(current=>new Set(current).add(task.id));try{await setTaskCompleted(task.id,!task.completed);notify(task.completed?"Task restored":"Task completed")}catch(error){reportMutationError("update the task",error)}finally{setPendingTasks(current=>{const next=new Set(current);next.delete(task.id);return next})}};
   const addProject=()=>{if(!projectPending)setProjectModal(true)};
   const saveProject=async(name:string)=>{setProjectPending(true);try{await createProject(name);setProjectModal(false);notify("Project created");return true}catch(error){reportMutationError("create the project",error);return false}finally{setProjectPending(false)}};
@@ -165,6 +167,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
     </aside>
     <main>
       <header><button className="menu-btn icon-btn" onClick={()=>setMobileOpen(true)} aria-label="Open navigation"><Menu/></button><div className="page-title"><span>FLOWDESK / TASKS</span><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="header-actions"><button className="mobile-search-btn icon-btn" aria-label="Search tasks" onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}><Search/></button><div className={`search-wrap ${searchOpen?"expanded":""}`}><form className="search" onSubmit={e=>{e.preventDefault();commitSearch()}}><Sparkles className="ai-spark"/><input ref={searchRef} aria-label="Search tasks with natural language" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>setQuery(e.target.value)} placeholder="Ask FlowDesk…"/>{interpreting?<Loader2 className="spin"/>:<kbd>⌘ K</kbd>}{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><X/></button>}</form>{searchOpen&&<div className="search-popover"><div className="search-status"><span><Sparkles/> SMART SEARCH</span>{interpreting?<em><Loader2 className="spin"/> Interpreting query</em>:query&&<em>{searchSource==="ai"?"AI interpreted":"Local interpretation"}</em>}</div>{intentChips.length>0&&<div className="intent-area"><small>APPLIED INTENT</small><div className="intent-chips">{intentChips.map((chip,i)=><button type="button" key={`${chip.key}-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}</div></div>}{!query&&<><small className="popover-label">{recentSearches.length?"RECENT SEARCHES":"TRY ASKING"}</small>{(recentSearches.length?recentSearches:["show tasks due next week","find unfinished product work","what have I ignored?"]).map(item=><button type="button" className="suggestion" key={item} onClick={()=>{setQuery(item);commitSearch(item)}}><Search/><span>{item}</span><kbd>↵</kbd></button>)}</>}{query&&<div className="result-preview"><strong>{filtered.length} matching {filtered.length===1?"task":"tasks"}</strong><span>Press Enter to keep this search</span></div>}</div>}</div><button className="icon-btn" onClick={()=>setTheme(theme==="dark"?"light":"dark")} aria-label="Toggle theme">{theme==="dark"?<Sun/>:<Moon/>}</button><button className="icon-btn notification" aria-label="Notifications"><Bell/><i/></button><button className="btn primary new-task" onClick={()=>{setSelected(undefined);setModal("new")}}><Plus/>New task</button></div></header>
+      <ReminderPanel tasks={tasks} projects={projects} userKey={user.email} onOpenTask={task=>{setSelected(task);setModal("edit")}}/>
       <div className="content">
         {view==="settings"?<SettingsView theme={theme} setTheme={setTheme} clearCompleted={async()=>{try{await clearCompleted();notify("Completed tasks cleared")}catch(error){reportMutationError("clear completed tasks",error)}}} reset={async()=>{try{await resetWorkspace();notify("Workspace reset")}catch(error){reportMutationError("reset the workspace",error)}}}/>:
         view==="projects"?<ProjectsView projects={projects} tasks={tasks} add={addProject} remove={removeProject} changeColor={changeProjectColor} pending={projectPending}/>:

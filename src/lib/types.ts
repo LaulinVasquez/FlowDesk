@@ -1,7 +1,7 @@
 export type Priority = "low" | "medium" | "high";
 export interface Task {
   id: string; ownerId?: string; title: string; description?: string; completed: boolean;
-  priority: Priority; dueDate?: string; projectId?: string; tags?: string[];
+  priority: Priority; dueDate?: string; dueTime?: string; projectId?: string; tags?: string[];
   createdAt: string; updatedAt: string; completedAt?: string;
 }
 export interface Project { id: string; ownerId?: string; name: string; color: string; icon?: string; createdAt: string; }
