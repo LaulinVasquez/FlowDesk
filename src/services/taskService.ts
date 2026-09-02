@@ -9,6 +9,8 @@ export interface TaskInput {
   projectId: string | null;
   dueDate?: string | null;
   dueTime?: string | null;
+  dueAt?: string | null;
+  reminderMinutes?: 15 | 60 | 1440 | null;
   tags?: string[];
 }
 
@@ -19,12 +21,12 @@ async function authenticatedClient() {
   return { supabase, user };
 }
 
-const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, tags, completed_at, created_at, updated_at";
+const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, due_at, reminder_minutes, tags, completed_at, created_at, updated_at";
 
 function taskValues(input: TaskInput) {
   const title = input.title.trim();
   if (!title) throw new Error("Task title is required.");
-  return { project_id: input.projectId || null, title, description: input.description?.trim() || null, priority: input.priority ?? "medium", due_date: input.dueDate || null, due_time: input.dueDate ? input.dueTime || null : null, tags: input.tags ?? [] };
+  return { project_id: input.projectId || null, title, description: input.description?.trim() || null, priority: input.priority ?? "medium", due_date: input.dueDate || null, due_time: input.dueDate ? input.dueTime || null : null, due_at: input.dueAt || null, reminder_minutes: input.reminderMinutes || null, tags: input.tags ?? [] };
 }
 
 export async function getTasks() {

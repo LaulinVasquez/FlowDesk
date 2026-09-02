@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 export function GoogleSignInButton() {
   const [loading, setLoading] = useState(false);
@@ -13,13 +12,9 @@ export function GoogleSignInButton() {
     signInStarted.current = true;
     setLoading(true);
     setError("");
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
-
-    if (signInError) {
+    try {
+      window.location.assign("/auth/google");
+    } catch {
       setError("Could not start Google sign-in. Please try again.");
       setLoading(false);
       signInStarted.current = false;

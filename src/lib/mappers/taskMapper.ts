@@ -10,6 +10,8 @@ export interface TaskRow {
   priority: Priority;
   due_date: string | null;
   due_time: string | null;
+  due_at: string | null;
+  reminder_minutes: 15 | 60 | 1440 | null;
   tags: string[] | null;
   completed_at: string | null;
   created_at: string;
@@ -27,6 +29,8 @@ export function mapTaskRow(row: TaskRow): Task {
     priority: row.priority,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
+    dueAt: row.due_at ?? undefined,
+    reminderMinutes: row.reminder_minutes ?? undefined,
     tags: row.tags ?? [],
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,

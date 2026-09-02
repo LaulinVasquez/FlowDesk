@@ -30,6 +30,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 - Collapsible desktop sidebar and mobile navigation drawer
 - Confirmation dialogs, empty states, and toast notifications
 - Authenticated, cross-device task and project persistence through Supabase
+- In-app reminders and optional standards-based browser push notifications
 - Keyboard focus states and reduced-motion support
 
 ## Tech Stack
@@ -81,6 +82,24 @@ In **Supabase Dashboard → Authentication → URL Configuration**, set:
 - Keep `http://localhost:3000/auth/callback` as an additional redirect only for local development
 
 The application builds the OAuth callback from the domain currently open in the browser. The callback also honors Vercel's forwarded host and protocol headers, so production login returns to the same deployed domain.
+
+### Browser push notifications
+
+Apply all Supabase migrations, then configure these variables locally and in Vercel:
+
+```bash
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:admin@example.com
+SUPABASE_SERVICE_ROLE_KEY=
+CRON_SECRET=
+```
+
+Generate the VAPID key pair with `npx web-push generate-vapid-keys`. Only the public key may be exposed to the browser. The service-role key, private VAPID key, and cron secret must remain server-only.
+
+`vercel.json` schedules `/api/notifications/process` every five minutes. Vercel sends `CRON_SECRET` in the authorization header. The processor uses `due_at` timestamps, sends each eligible reminder to every registered device, and records each task/reminder/subscription delivery to prevent duplicates.
+
+Push requires HTTPS outside localhost. Browser and operating-system support varies; iOS Web Push generally requires an installed Home Screen web app and a supported iOS version. Browser permission must be granted through the Settings action.
 
 ### Linting
 
