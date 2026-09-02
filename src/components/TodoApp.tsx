@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
-  Archive, Bell, CalendarDays, Check, CheckCircle2, Circle, Loader2,
+  Archive, CalendarDays, Check, CheckCircle2, Circle, Loader2,
   Clock3, Folder, Inbox, LayoutGrid, Menu, Moon, MoreHorizontal, PanelLeftClose,
   PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Settings, Sparkles, Sun, Trash2, X
 } from "lucide-react";
@@ -28,6 +28,24 @@ const fmtDue = (task:Task) => {
   return `${date} · ${new Intl.DateTimeFormat("en", { hour:"numeric", minute:"2-digit" }).format(localDue)}`;
 };
 
+function TimePicker({value,disabled,onChange}:{value:string;disabled:boolean;onChange:(value:string)=>void}) {
+  const [rawHour="",rawMinute=""] = value.split(":");
+  const hour24 = rawHour === "" ? 12 : Number(rawHour);
+  const hour12 = hour24 % 12 || 12;
+  const period = hour24 >= 12 ? "PM" : "AM";
+  const update = (hour:number,minute:string,nextPeriod:string) => {
+    const normalizedHour = hour % 12 + (nextPeriod === "PM" ? 12 : 0);
+    onChange(`${normalizedHour.toString().padStart(2,"0")}:${minute.padStart(2,"0")}`);
+  };
+  return <div className="time-picker">
+    <select aria-label="Due hour" disabled={disabled} value={value?hour12:""} onChange={event=>update(Number(event.target.value),rawMinute||"00",period)}><option value="" disabled>Hour</option>{Array.from({length:12},(_,index)=>index+1).map(hour=><option key={hour} value={hour}>{hour}</option>)}</select>
+    <span aria-hidden="true">:</span>
+    <select aria-label="Due minute" disabled={disabled} value={value?rawMinute:""} onChange={event=>update(hour12,event.target.value,period)}><option value="" disabled>Min</option>{Array.from({length:60},(_,minute)=>minute.toString().padStart(2,"0")).map(minute=><option key={minute} value={minute}>{minute}</option>)}</select>
+    <select aria-label="Due time period" disabled={disabled} value={period} onChange={event=>update(hour12,rawMinute||"00",event.target.value)}><option>AM</option><option>PM</option></select>
+    {value&&<button type="button" aria-label="Clear due time" onClick={()=>onChange("")}><X/></button>}
+  </div>;
+}
+
 function StatCard({label,value,helper,icon}:{label:string;value:string|number;helper:string;icon:React.ReactNode}) {
   return <article className="stat-card"><div className="stat-icon">{icon}</div><div><p>{label}</p><strong>{value}</strong><small>{helper}</small></div></article>;
 }
@@ -46,7 +64,7 @@ function TaskModal({task,projects,onClose,onSave}:{task?:Task;projects:Project[]
         <div className="form-grid">
           <label>Priority<select value={draft.priority} onChange={e=>setDraft({...draft,priority:e.target.value as Priority})}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
           <label>Due date<input type="date" value={draft.dueDate} onChange={e=>setDraft({...draft,dueDate:e.target.value,dueTime:e.target.value?draft.dueTime:""})}/></label>
-          <label>Due time (optional)<input type="time" value={draft.dueTime} disabled={!draft.dueDate} onChange={e=>setDraft({...draft,dueTime:e.target.value})}/></label>
+          <label>Due time (optional)<TimePicker value={draft.dueTime} disabled={!draft.dueDate} onChange={dueTime=>setDraft({...draft,dueTime})}/></label>
           <label>Push reminder<select value={draft.reminderMinutes} disabled={!draft.dueDate||!draft.dueTime} onChange={e=>setDraft({...draft,reminderMinutes:e.target.value})}><option value="">Use my default</option><option value="15">15 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
           <label>Project<select value={draft.projectId} onChange={e=>setDraft({...draft,projectId:e.target.value})}><option value="">No project</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
           <label>Tags<input value={draft.tags} onChange={e=>setDraft({...draft,tags:e.target.value})} placeholder="design, review"/></label>
@@ -177,8 +195,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
       <button className="collapse-btn" onClick={()=>setCollapsed(!collapsed)}>{collapsed?<PanelLeftOpen/>:<PanelLeftClose/>}</button>
     </aside>
     <main>
-      <header><button className="menu-btn icon-btn" onClick={()=>setMobileOpen(true)} aria-label="Open navigation"><Menu/></button><div className="page-title"><span>FLOWDESK / TASKS</span><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="header-actions"><button className="mobile-search-btn icon-btn" aria-label="Search tasks" onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}><Search/></button><div className={`search-wrap ${searchOpen?"expanded":""}`}><form className="search" onSubmit={e=>{e.preventDefault();commitSearch()}}><Sparkles className="ai-spark"/><input ref={searchRef} aria-label="Search tasks with natural language" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>setQuery(e.target.value)} placeholder="Ask FlowDesk…"/>{interpreting?<Loader2 className="spin"/>:<kbd>⌘ K</kbd>}{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><X/></button>}</form>{searchOpen&&<div className="search-popover"><div className="search-status"><span><Sparkles/> SMART SEARCH</span>{interpreting?<em><Loader2 className="spin"/> Interpreting query</em>:query&&<em>{searchSource==="ai"?"AI interpreted":"Local interpretation"}</em>}</div>{intentChips.length>0&&<div className="intent-area"><small>APPLIED INTENT</small><div className="intent-chips">{intentChips.map((chip,i)=><button type="button" key={`${chip.key}-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}</div></div>}{!query&&<><small className="popover-label">{recentSearches.length?"RECENT SEARCHES":"TRY ASKING"}</small>{(recentSearches.length?recentSearches:["show tasks due next week","find unfinished product work","what have I ignored?"]).map(item=><button type="button" className="suggestion" key={item} onClick={()=>{setQuery(item);commitSearch(item)}}><Search/><span>{item}</span><kbd>↵</kbd></button>)}</>}{query&&<div className="result-preview"><strong>{filtered.length} matching {filtered.length===1?"task":"tasks"}</strong><span>Press Enter to keep this search</span></div>}</div>}</div><button className="icon-btn" onClick={()=>setTheme(theme==="dark"?"light":"dark")} aria-label="Toggle theme">{theme==="dark"?<Sun/>:<Moon/>}</button><button className="icon-btn notification" aria-label="Notifications"><Bell/><i/></button><button className="btn primary new-task" onClick={()=>{setSelected(undefined);setModal("new")}}><Plus/>New task</button></div></header>
-      <ReminderPanel tasks={tasks} projects={projects} userKey={user.email} onOpenTask={task=>{setSelected(task);setModal("edit")}}/>
+      <header><button className="menu-btn icon-btn" onClick={()=>setMobileOpen(true)} aria-label="Open navigation"><Menu/></button><div className="page-title"><span>FLOWDESK / TASKS</span><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="header-actions"><button className="mobile-search-btn icon-btn" aria-label="Search tasks" onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}><Search/></button><div className={`search-wrap ${searchOpen?"expanded":""}`}><form className="search" onSubmit={e=>{e.preventDefault();commitSearch()}}><Sparkles className="ai-spark"/><input ref={searchRef} aria-label="Search tasks with natural language" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>setQuery(e.target.value)} placeholder="Ask FlowDesk…"/>{interpreting?<Loader2 className="spin"/>:<kbd>⌘ K</kbd>}{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><X/></button>}</form>{searchOpen&&<div className="search-popover"><div className="search-status"><span><Sparkles/> SMART SEARCH</span>{interpreting?<em><Loader2 className="spin"/> Interpreting query</em>:query&&<em>{searchSource==="ai"?"AI interpreted":"Local interpretation"}</em>}</div>{intentChips.length>0&&<div className="intent-area"><small>APPLIED INTENT</small><div className="intent-chips">{intentChips.map((chip,i)=><button type="button" key={`${chip.key}-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}</div></div>}{!query&&<><small className="popover-label">{recentSearches.length?"RECENT SEARCHES":"TRY ASKING"}</small>{(recentSearches.length?recentSearches:["show tasks due next week","find unfinished product work","what have I ignored?"]).map(item=><button type="button" className="suggestion" key={item} onClick={()=>{setQuery(item);commitSearch(item)}}><Search/><span>{item}</span><kbd>↵</kbd></button>)}</>}{query&&<div className="result-preview"><strong>{filtered.length} matching {filtered.length===1?"task":"tasks"}</strong><span>Press Enter to keep this search</span></div>}</div>}</div><button className="icon-btn" onClick={()=>setTheme(theme==="dark"?"light":"dark")} aria-label="Toggle theme">{theme==="dark"?<Sun/>:<Moon/>}</button><ReminderPanel tasks={tasks} projects={projects} userKey={user.email} onOpenTask={task=>{setSelected(task);setModal("edit")}}/><button className="btn primary new-task" onClick={()=>{setSelected(undefined);setModal("new")}}><Plus/>New task</button></div></header>
       <div className="content">
         {view==="settings"?<><NotificationSettings/><SettingsView theme={theme} setTheme={setTheme} clearCompleted={async()=>{try{await clearCompleted();notify("Completed tasks cleared")}catch(error){reportMutationError("clear completed tasks",error)}}} reset={async()=>{try{await resetWorkspace();notify("Workspace reset")}catch(error){reportMutationError("reset the workspace",error)}}}/></>:
         view==="projects"?<ProjectsView projects={projects} tasks={tasks} add={addProject} remove={removeProject} changeColor={changeProjectColor} pending={projectPending}/>:
