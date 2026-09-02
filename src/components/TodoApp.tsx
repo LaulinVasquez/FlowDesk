@@ -18,6 +18,14 @@ const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", due
 const projectColors = ["#3ecf8e", "#60a5fa", "#a78bfa", "#f59e0b", "#f87171", "#22d3ee"];
 const today = () => new Date().toISOString().slice(0,10);
 const fmt = (date?:string) => date ? new Intl.DateTimeFormat("en",{month:"short",day:"numeric"}).format(new Date(`${date}T12:00:00`)) : "No date";
+const fmtDue = (task:Task) => {
+  if (!task.dueDate) return "No date";
+  const date = fmt(task.dueDate);
+  if (!task.dueTime) return date;
+  const [hour, minute] = task.dueTime.split(":").map(Number);
+  const localDue = new Date(2000, 0, 1, hour, minute);
+  return `${date} · ${new Intl.DateTimeFormat("en", { hour:"numeric", minute:"2-digit" }).format(localDue)}`;
+};
 
 function StatCard({label,value,helper,icon}:{label:string;value:string|number;helper:string;icon:React.ReactNode}) {
   return <article className="stat-card"><div className="stat-icon">{icon}</div><div><p>{label}</p><strong>{value}</strong><small>{helper}</small></div></article>;
@@ -187,7 +195,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
               <div className="task-main"><button className="check-btn" disabled={pendingTasks.has(task.id)} onClick={()=>toggle(task)} aria-label={`${task.completed?"Restore":"Complete"} ${task.title}`}>{pendingTasks.has(task.id)?<Loader2 className="spin"/>:task.completed?<Check/>:<Circle/>}</button><button className="task-copy" onClick={()=>{setSelected(task);setModal("edit")}}><strong>{task.title}</strong><span>{task.description||"No additional notes"}{task.tags?.map(tag=><em key={tag}>#{tag}</em>)}</span></button></div>
               <div className="project-cell">{project(task.projectId)?<><i style={{background:project(task.projectId)?.color}}/>{project(task.projectId)?.name}</>:<span>—</span>}</div>
               <div><span className={`badge ${task.priority}`}><i/>{task.priority}</span></div>
-              <div className={`due ${!task.completed&&task.dueDate&&task.dueDate<today()?"overdue":""}`}><CalendarDays/>{fmt(task.dueDate)}</div>
+              <div className={`due ${!task.completed&&task.dueDate&&task.dueDate<today()?"overdue":""}`}><CalendarDays/>{fmtDue(task)}</div>
               <div className="row-actions"><button aria-label="Edit task" onClick={()=>{setSelected(task);setModal("edit")}}><Pencil/></button><button aria-label="Delete task" onClick={()=>setDeleting(task)}><Trash2/></button><button aria-label="More actions"><MoreHorizontal/></button></div>
             </div>)}</div>:(()=>{const empty=emptyState();return <div className="empty"><div><Archive/></div><h3>{empty.title}</h3><p>{empty.body}</p>{empty.action&&<button className="btn primary" onClick={()=>setModal("new")}><Plus/>Create task</button>}</div>})()}
           </section>
