@@ -16,8 +16,8 @@ jobs:
     steps:
       - name: Invoke protected notification processor
         env:
-          FLOWDESK_URL: ${{ secrets.FLOWDESK_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          FLOWDESK_URL: ${{ secrets['FLOWDESK_URL'] }}
+          CRON_SECRET: ${{ secrets['CRON_SECRET'] }}
         run: |
           test -n "$FLOWDESK_URL"
           test -n "$CRON_SECRET"
