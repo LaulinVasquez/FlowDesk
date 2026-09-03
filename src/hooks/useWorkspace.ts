@@ -31,6 +31,13 @@ export function useWorkspace() {
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  const refreshTasks = useCallback(async () => {
+    const taskRows = await getTasks();
+    setTasks(taskRows.map(mapTaskRow));
+  }, []);
+
+  const refreshConnections = useCallback(async () => setConnections(await getConnections()), []);
+
   useEffect(() => {
     let active = true;
     async function loadWorkspace() {
@@ -95,7 +102,6 @@ export function useWorkspace() {
     return task;
   }, []);
 
-  const refreshConnections = useCallback(async () => setConnections(await getConnections()), []);
   const requestConnection = useCallback(async (email: string) => { await requestConnectionRow(email); await refreshConnections(); }, [refreshConnections]);
   const answerConnection = useCallback(async (id: string, response: "accepted" | "rejected") => { await respondToConnection(id, response); await refreshConnections(); }, [refreshConnections]);
   const removeConnection = useCallback(async (id: string) => { await removeConnectionRow(id); setConnections(current => current.filter(item => item.id !== id)); }, []);
@@ -121,7 +127,7 @@ export function useWorkspace() {
     tasks, projects, connections, loading, error,
     createProject, updateProject, deleteProject,
     createTask, updateTask, updateTaskStage, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
-    requestConnection, answerConnection, removeConnection,
+    requestConnection, answerConnection, removeConnection, refreshTasks, refreshConnections,
     retry: () => setAttempt(value => value + 1),
   };
 }
