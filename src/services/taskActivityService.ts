@@ -19,7 +19,7 @@ export interface ActivityProfile {
 export interface TaskActivity {
   id: string;
   taskId: string;
-  actorUserId: string;
+  actorUserId?: string;
   eventType: TaskActivityEvent;
   fromStage?: TaskStage;
   toStage?: TaskStage;
@@ -41,7 +41,7 @@ type ProfileRow = {
 export interface TaskActivityRow {
   id: string;
   task_id: string;
-  actor_user_id: string;
+  actor_user_id: string | null;
   event_type: TaskActivityEvent;
   from_stage: TaskStage | null;
   to_stage: TaskStage | null;
@@ -83,7 +83,7 @@ export function mapTaskActivityRow(row: TaskActivityRow): TaskActivity {
   return {
     id: row.id,
     taskId: row.task_id,
-    actorUserId: row.actor_user_id,
+    actorUserId: row.actor_user_id ?? undefined,
     eventType: row.event_type,
     fromStage: row.from_stage ?? undefined,
     toStage: row.to_stage ?? undefined,
