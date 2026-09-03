@@ -98,7 +98,7 @@ CRON_SECRET=
 
 Generate the VAPID key pair with `npx web-push generate-vapid-keys`. Only the public key may be exposed to the browser. The service-role key, private VAPID key, and cron secret must remain server-only.
 
-`vercel.json` schedules `/api/notifications/process` every five minutes. Vercel sends `CRON_SECRET` in the authorization header. The processor uses `due_at` timestamps, sends each eligible reminder to every registered device, and records each task/reminder/subscription delivery to prevent duplicates.
+The GitHub Actions workflow `.github/workflows/notification-processor.yml` calls `/api/notifications/process` every five minutes with `CRON_SECRET` in the authorization header. This keeps the deployment compatible with Vercel Hobby, whose cron jobs can run only once per day. Add repository Actions secrets named `FLOWDESK_URL` (your production origin, such as `https://flowdesk.example.com`) and `CRON_SECRET` (the same value configured in Vercel). The processor uses `due_at` timestamps, sends each eligible reminder to every registered device, and records each task/reminder/subscription delivery to prevent duplicates.
 
 Push requires HTTPS outside localhost. Browser and operating-system support varies; iOS Web Push generally requires an installed Home Screen web app and a supported iOS version. Browser permission must be granted through the Settings action.
 
