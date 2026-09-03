@@ -37,19 +37,5 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?error=no_user", origin));
   }
 
-  const metadata = user.user_metadata;
-  const { error: profileError } = await supabase.from("profiles").upsert({
-    id: user.id,
-    full_name: metadata.full_name || metadata.name || user.email?.split("@")[0] || "FlowDesk user",
-    avatar_url: metadata.avatar_url || metadata.picture || null,
-    email: user.email?.toLowerCase() || null,
-    updated_at: new Date().toISOString(),
-  });
-
-  if (profileError) {
-    console.error("Could not create authenticated user profile:", profileError.message);
-    return NextResponse.redirect(new URL("/login?error=profile_setup_failed", origin));
-  }
-
   return NextResponse.redirect(new URL("/app", origin));
 }
