@@ -12,8 +12,10 @@ import {
   GripVertical,
   Inbox,
   Loader2,
+  MessageSquare,
   Pencil,
   RotateCcw,
+  Send,
   UserRound,
   X,
 } from "lucide-react";
@@ -38,6 +40,15 @@ export interface WorkBoardActivity {
   actor?: WorkBoardProfile;
 }
 
+export interface WorkBoardComment {
+  id: string;
+  taskId: string;
+  authorUserId?: string;
+  body: string;
+  createdAt: string;
+  author?: WorkBoardProfile;
+}
+
 export interface WorkBoardProps {
   tasks: Task[];
   projects: Project[];
@@ -48,6 +59,8 @@ export interface WorkBoardProps {
   onStageTransition: (task: Task, stage: TaskStage, reviewNote?: string) => Promise<unknown>;
   onAssignmentChange: (task: Task, assignedUserId: string | null) => Promise<unknown>;
   activities?: WorkBoardActivity[];
+  comments?: WorkBoardComment[];
+  onAddComment?: (task: Task, body: string) => Promise<unknown>;
   activityLoading?: boolean;
   activityError?: string | null;
   onRetryActivity?: () => void;
@@ -142,6 +155,8 @@ export function WorkBoard({
   onStageTransition,
   onAssignmentChange,
   activities = [],
+  comments = [],
+  onAddComment,
   activityLoading = false,
   activityError = null,
   onRetryActivity,
@@ -161,6 +176,9 @@ export function WorkBoard({
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; message: string } | null>(null);
   const [reviewTaskId, setReviewTaskId] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState("");
+  const [commentText, setCommentText] = useState("");
+  const [commentPending, setCommentPending] = useState(false);
+  const [commentError, setCommentError] = useState("");
   const [now, setNow] = useState(() => new Date());
   const closeRef = useRef<HTMLButtonElement>(null);
   const reviewRef = useRef<HTMLTextAreaElement>(null);
@@ -213,6 +231,11 @@ export function WorkBoard({
   useEffect(() => {
     if (reviewTaskId) reviewRef.current?.focus();
   }, [reviewTaskId]);
+
+  useEffect(() => {
+    setCommentText("");
+    setCommentError("");
+  }, [selectedId]);
 
   useEffect(() => {
     if (!feedback) return;
@@ -271,6 +294,9 @@ export function WorkBoard({
   const selectedActivities = selectedId
     ? activities.filter(activity => activity.taskId === selectedId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : [];
+  const selectedComments = selectedId
+    ? comments.filter(comment => comment.taskId === selectedId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    : [];
 
   const setTaskPending = (taskId: string, value: boolean) => setPending(current => {
     const next = new Set(current);
@@ -321,6 +347,21 @@ export function WorkBoard({
       return;
     }
     await runTransition(task, "working", note);
+  };
+
+  const submitComment = async (task: Task) => {
+    const body = commentText.trim();
+    if (!body || !onAddComment || commentPending) return;
+    setCommentPending(true);
+    setCommentError("");
+    try {
+      await onAddComment(task, body);
+      setCommentText("");
+    } catch (commentSubmitError) {
+      setCommentError(commentSubmitError instanceof Error ? commentSubmitError.message : "Unable to add the comment.");
+    } finally {
+      setCommentPending(false);
+    }
   };
 
   const runAssignmentChange = async (task: Task, nextAssignee: string | null) => {
@@ -540,6 +581,15 @@ export function WorkBoard({
           {selectedTask.stage === "reviewed" && selectedTask.ownerId === userId && <><button type="button" className="wb-button wb-secondary" disabled={pending.has(selectedTask.id)} onClick={() => requestChanges(selectedTask)}><RotateCcw/>Request changes</button><button type="button" className="wb-button wb-primary" disabled={pending.has(selectedTask.id)} onClick={() => void runTransition(selectedTask, "approved")}><Check/>Approve</button></>}
         </div>}
 
+        <div className="wb-comments">
+          <h3><MessageSquare/>Comments <span>{selectedComments.length}</span></h3>
+          {selectedComments.length > 0 ? <ol>{selectedComments.map(comment => {
+            const author = comment.author || (comment.authorUserId ? profiles.get(comment.authorUserId) : undefined);
+            return <li key={comment.id}><span className="wb-mini-avatar" style={avatarStyle(author)}>{!author?.avatarUrl && initials(author)}</span><div><p><strong>{displayName(author, comment.authorUserId, userId)}</strong><time dateTime={comment.createdAt}>{formatDate(comment.createdAt, true)}</time></p><blockquote>{comment.body}</blockquote></div></li>;
+          })}</ol> : <div className="wb-comment-empty">No comments yet. Add context or a progress update.</div>}
+          {onAddComment && <div className="wb-comment-form"><label htmlFor="wb-comment-body">Add a comment</label><textarea id="wb-comment-body" value={commentText} maxLength={2000} rows={3} onChange={event => { setCommentText(event.target.value); setCommentError(""); }} placeholder="Share an update or ask a question…"/>{commentError && <p role="alert">{commentError}</p>}<div><small>{commentText.length}/2000</small><button type="button" className="wb-button wb-primary" disabled={commentPending || !commentText.trim()} onClick={() => void submitComment(selectedTask)}>{commentPending ? <Loader2 className="spin"/> : <Send/>}{commentPending ? "Posting…" : "Post comment"}</button></div></div>}
+        </div>
+
         <div className="wb-activity">
           <h3><Clock3/>Activity</h3>
           {activityLoading ? <div className="wb-activity-empty"><Loader2 className="spin"/><span>Loading activity…</span></div> : selectedActivities.length > 0 ? <ol>{selectedActivities.map(activity => {
@@ -573,6 +623,7 @@ function BoardStyles() {
     .wb-inline-warning{display:flex;align-items:center;gap:8px;padding:9px 11px;margin-bottom:10px;border:1px solid rgba(243,185,95,.3);border-radius:7px;background:rgba(243,185,95,.07);color:var(--amber);font-size:9px}.wb-inline-warning svg{width:14px}.wb-inline-warning button{margin-left:auto;border:0;background:transparent;color:inherit;font-weight:700}
     .wb-overlay{position:fixed;inset:0;z-index:110;background:rgba(4,7,5,.72);backdrop-filter:blur(6px);display:flex;justify-content:flex-end;padding:12px;animation:fade .15s ease}.wb-detail{width:min(510px,100%);height:100%;overflow:auto;border:1px solid var(--border2);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);padding:24px;animation:wb-slide-in .2s ease}.wb-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding-bottom:18px;border-bottom:1px solid var(--border)}.wb-detail-head h2{font-size:19px;line-height:1.35;margin:0}.wb-icon-button{width:34px;height:34px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--muted);display:grid;place-items:center;flex:0 0 auto}.wb-icon-button svg{width:15px}.wb-description{font-size:11px;line-height:1.7;color:var(--muted);padding:16px 0;margin:0;border-bottom:1px solid var(--border);white-space:pre-wrap}.wb-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:7px 0 18px}.wb-detail-value{min-height:66px;padding:12px 7px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px}.wb-detail-value>span{font:8px "DM Mono",monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}.wb-detail-value>strong{font-size:10px}.wb-detail-person{display:flex;align-items:center;gap:7px}.wb-detail-person strong{font-size:10px}.wb-reassign{display:flex;flex-direction:column;gap:6px;padding:13px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);font-size:9px;color:var(--muted)}.wb-reassign>span{font-weight:700;color:var(--text)}.wb-reassign select{width:100%}.wb-reassign small{font-size:8px}.wb-review-note{margin-top:14px;padding:13px;border:1px solid rgba(167,139,250,.22);border-radius:7px;background:var(--wb-purple-soft)}.wb-review-note strong{display:flex;align-items:center;gap:6px;color:var(--wb-purple);font-size:10px}.wb-review-note svg{width:13px}.wb-review-note p{font-size:10px;line-height:1.55;margin:7px 0 0}.wb-review-form{margin-top:14px;padding:14px;border:1px solid rgba(167,139,250,.26);border-radius:7px;background:var(--wb-purple-soft)}.wb-review-form>label{display:block;font-size:10px;font-weight:700;margin-bottom:7px}.wb-review-form textarea{width:100%;padding:10px;color:var(--text);font-size:11px;resize:vertical}.wb-review-form>div{display:flex;justify-content:flex-end;gap:7px;margin-top:9px}.wb-detail-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap;margin-top:16px}.wb-button{min-height:35px;padding:0 11px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:9px}.wb-button svg{width:13px}.wb-primary{border:1px solid var(--green);background:var(--green);color:#063923;font-weight:700}.wb-secondary{border:1px solid var(--border2);background:var(--surface2);color:var(--text)}.wb-button:disabled{opacity:.55}.wb-activity{margin-top:23px;padding-top:18px;border-top:1px solid var(--border)}.wb-activity h3{display:flex;align-items:center;gap:7px;font-size:11px;margin:0 0 14px}.wb-activity h3 svg{width:14px;color:var(--green)}.wb-activity ol{list-style:none;padding:0;margin:0}.wb-activity li{display:flex;gap:9px;position:relative;padding-bottom:15px}.wb-activity li:not(:last-child):before{content:"";position:absolute;left:12px;top:27px;bottom:2px;width:1px;background:var(--border)}.wb-activity li>div{min-width:0}.wb-activity p{font-size:9px;margin:2px 0 3px}.wb-activity time{font-size:8px;color:var(--muted2)}.wb-activity blockquote{font-size:9px;color:var(--muted);margin:5px 0;padding:7px 9px;border-left:2px solid var(--wb-purple);background:var(--surface2)}.wb-activity-empty{min-height:72px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--muted2);font-size:9px}.wb-activity-empty svg{width:15px}
     .wb-feedback{position:fixed;right:20px;bottom:20px;z-index:140;max-width:min(390px,calc(100vw - 30px));display:flex;align-items:center;gap:8px;padding:11px 13px;border:1px solid var(--border2);border-radius:7px;background:var(--surface);box-shadow:var(--shadow);font-size:9px}.wb-feedback.success>svg{color:var(--green)}.wb-feedback.error{border-color:rgba(248,113,113,.35)}.wb-feedback.error>svg{color:var(--red)}.wb-feedback>svg{width:15px;flex:0 0 auto}.wb-feedback>button{margin-left:auto;border:0;background:transparent;color:var(--muted);padding:2px}.wb-feedback>button svg{width:13px}.work-board-state{min-height:300px;border:1px solid var(--border);border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;gap:13px}.work-board-state>svg{width:25px;color:var(--green)}.work-board-state h2{font-size:13px;margin:0 0 5px}.work-board-state p{font-size:10px;color:var(--muted);margin:0 0 10px}
+    .wb-comments{margin-top:23px;padding-top:18px;border-top:1px solid var(--border)}.wb-comments h3{display:flex;align-items:center;gap:7px;font-size:11px;margin:0 0 14px}.wb-comments h3>svg{width:14px;color:var(--green)}.wb-comments h3>span{font-size:8px;padding:2px 6px;border-radius:99px;background:var(--surface3);color:var(--muted)}.wb-comments ol{list-style:none;padding:0;margin:0 0 13px;display:flex;flex-direction:column;gap:10px}.wb-comments li{display:flex;gap:9px}.wb-comments li>div{min-width:0;flex:1}.wb-comments li p{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:1px 0 5px;font-size:9px}.wb-comments li time{font-size:8px;color:var(--muted2);font-weight:400}.wb-comments li blockquote{margin:0;padding:9px 10px;border:1px solid var(--border);border-radius:0 6px 6px 6px;background:var(--surface2);font-size:10px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.wb-comment-empty{padding:16px;border:1px dashed var(--border);border-radius:6px;text-align:center;color:var(--muted2);font-size:9px;margin-bottom:12px}.wb-comment-form{padding:12px;border:1px solid var(--border);border-radius:7px;background:var(--surface2)}.wb-comment-form>label{display:block;margin-bottom:7px;font-size:9px;font-weight:700}.wb-comment-form textarea{width:100%;padding:10px;color:var(--text);font-size:10px;line-height:1.5;resize:vertical}.wb-comment-form>p{margin:6px 0 0;color:var(--red);font-size:9px}.wb-comment-form>div{display:flex;align-items:center;justify-content:space-between;margin-top:8px}.wb-comment-form small{font-size:8px;color:var(--muted2)}
     .wb-column>header{height:auto;position:static;top:auto;z-index:auto;backdrop-filter:none}
     @keyframes wb-slide-in{from{opacity:0;transform:translateX(15px)}to{opacity:1;transform:none}}
     @media(max-width:1100px){.wb-filters{grid-template-columns:1fr 145px 145px}.wb-summary{overflow-x:auto}.wb-summary-title{position:sticky;left:0;z-index:1;background:var(--surface)}}

@@ -16,6 +16,8 @@ import { NotificationSettings } from "@/components/notifications/NotificationSet
 import { WorkBoard } from "@/components/WorkBoard";
 import { getTaskActivities, type TaskActivity } from "@/services/taskActivityService";
 import { getParticipantProfiles, type ParticipantProfile } from "@/services/profileService";
+import { addTaskComment, getTaskComments, type TaskComment } from "@/services/taskCommentService";
+import { createClient } from "@/lib/supabase/client";
 
 type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; dueTime:string; reminderMinutes:string; projectId:string; assignedUserId:string; tags:string };
 const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", dueTime:"", reminderMinutes:"", projectId:"", assignedUserId:"", tags:"" };
@@ -107,7 +109,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const [projectModal,setProjectModal]=useState(false);
   const [pendingTasks,setPendingTasks]=useState<Set<string>>(new Set()),[projectPending,setProjectPending]=useState(false);
   const [toast,setToast]=useState("");
-  const [boardActivities,setBoardActivities]=useState<TaskActivity[]>([]),[boardProfiles,setBoardProfiles]=useState<ParticipantProfile[]>([]),[activityLoading,setActivityLoading]=useState(false),[activityError,setActivityError]=useState(""),[activityAttempt,setActivityAttempt]=useState(0);
+  const [boardActivities,setBoardActivities]=useState<TaskActivity[]>([]),[boardComments,setBoardComments]=useState<TaskComment[]>([]),[boardProfiles,setBoardProfiles]=useState<ParticipantProfile[]>([]),[activityLoading,setActivityLoading]=useState(false),[activityError,setActivityError]=useState(""),[activityAttempt,setActivityAttempt]=useState(0);
   const searchRef=useRef<HTMLInputElement>(null);
 
   useEffect(()=>{try{const read=(key:string)=>localStorage.getItem(`flowdesk.${key}`)??localStorage.getItem(`tideline.${key}`);const th=read("theme"),r=read("searches");setTheme(th==="light"?"light":"dark");setRecentSearches(r?JSON.parse(r):[]);["flowdesk.tasks","flowdesk.projects","tideline.tasks","tideline.projects","flowdesk.workspaceDraft.tasks","flowdesk.workspaceDraft.projects"].forEach(key=>localStorage.removeItem(key))}catch{setTheme("dark");setRecentSearches([])}setPreferencesLoaded(true)},[]);
@@ -134,15 +136,21 @@ export function TodoApp({ user }: { user: AuthUser }) {
     const collaborativeTasks=tasks.filter(task=>task.assignedUserId&&(task.ownerId===user.id||task.assignedUserId===user.id));
     const taskIds=collaborativeTasks.map(task=>task.id);
     const participantIds=collaborativeTasks.flatMap(task=>[task.ownerId,task.assignedUserId]).filter((id):id is string=>Boolean(id));
-    if(taskIds.length===0){setBoardActivities([]);setBoardProfiles([]);setActivityError("");setActivityLoading(false);return}
+    if(taskIds.length===0){setBoardActivities([]);setBoardComments([]);setBoardProfiles([]);setActivityError("");setActivityLoading(false);return}
     let active=true;
     setActivityLoading(true);setActivityError("");
-    Promise.all([getTaskActivities(taskIds),getParticipantProfiles(participantIds)])
-      .then(([items,profiles])=>{if(active){setBoardActivities(items);setBoardProfiles(profiles)}})
-      .catch(activityLoadError=>{if(active){setActivityError(activityLoadError instanceof Error?activityLoadError.message:"Unable to load task activity.");setBoardActivities([]);setBoardProfiles([])}})
+    Promise.all([getTaskActivities(taskIds),getTaskComments(taskIds),getParticipantProfiles(participantIds)])
+      .then(([items,comments,profiles])=>{if(active){setBoardActivities(items);setBoardComments(comments);setBoardProfiles(profiles)}})
+      .catch(activityLoadError=>{if(active){setActivityError(activityLoadError instanceof Error?activityLoadError.message:"Unable to load collaboration details.");setBoardActivities([]);setBoardComments([]);setBoardProfiles([])}})
       .finally(()=>{if(active)setActivityLoading(false)});
     return()=>{active=false};
   },[activityAttempt,collaborativeActivityKey,tasks,user.id,view]);
+  useEffect(()=>{
+    if(view!=="board")return;
+    const supabase=createClient();
+    const channel=supabase.channel(`flowdesk-comments-${user.id}`).on("postgres_changes",{event:"*",schema:"public",table:"task_comments"},()=>setActivityAttempt(value=>value+1)).subscribe();
+    return()=>{void supabase.removeChannel(channel)};
+  },[user.id,view]);
 
   const notify=(m:string)=>setToast(m);
   const project=(id?:string)=>projects.find(p=>p.id===id);
@@ -221,7 +229,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
       <header><button className="menu-btn icon-btn" onClick={()=>setMobileOpen(true)} aria-label="Open navigation"><Menu/></button><div className="page-title"><span>FLOWDESK / TASKS</span><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="header-actions"><button className="mobile-search-btn icon-btn" aria-label="Search tasks" onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}><Search/></button><div className={`search-wrap ${searchOpen?"expanded":""}`}><form className="search" onSubmit={e=>{e.preventDefault();commitSearch()}}><Sparkles className="ai-spark"/><input ref={searchRef} aria-label="Search tasks with natural language" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>setQuery(e.target.value)} placeholder="Ask FlowDesk…"/>{interpreting?<Loader2 className="spin"/>:<kbd>⌘ K</kbd>}{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><X/></button>}</form>{searchOpen&&<div className="search-popover"><div className="search-status"><span><Sparkles/> SMART SEARCH</span>{interpreting?<em><Loader2 className="spin"/> Interpreting query</em>:query&&<em>{searchSource==="ai"?"AI interpreted":"Local interpretation"}</em>}</div>{intentChips.length>0&&<div className="intent-area"><small>APPLIED INTENT</small><div className="intent-chips">{intentChips.map((chip,i)=><button type="button" key={`${chip.key}-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}</div></div>}{!query&&<><small className="popover-label">{recentSearches.length?"RECENT SEARCHES":"TRY ASKING"}</small>{(recentSearches.length?recentSearches:["show tasks due next week","find unfinished product work","what have I ignored?"]).map(item=><button type="button" className="suggestion" key={item} onClick={()=>{setQuery(item);commitSearch(item)}}><Search/><span>{item}</span><kbd>↵</kbd></button>)}</>}{query&&<div className="result-preview"><strong>{filtered.length} matching {filtered.length===1?"task":"tasks"}</strong><span>Press Enter to keep this search</span></div>}</div>}</div><button className="icon-btn" onClick={()=>setTheme(theme==="dark"?"light":"dark")} aria-label="Toggle theme">{theme==="dark"?<Sun/>:<Moon/>}</button><ReminderPanel tasks={tasks} projects={projects} userKey={user.email} onOpenTask={task=>{setSelected(task);setModal("edit")}}/><button className="btn primary new-task" onClick={()=>{setSelected(undefined);setModal("new")}}><Plus/>New task</button></div></header>
       <div className="content">
         {view==="settings"?<><NotificationSettings/><SettingsView theme={theme} setTheme={setTheme} clearCompleted={async()=>{try{await clearCompleted();notify("Completed tasks cleared")}catch(error){reportMutationError("clear completed tasks",error)}}} reset={async()=>{try{await resetWorkspace();notify("Workspace reset")}catch(error){reportMutationError("reset the workspace",error)}}}/></>:
-        view==="board"?<WorkBoard tasks={tasks} projects={projects} connections={connections} participantProfiles={boardProfiles} userId={user.id} activities={boardActivities} activityLoading={activityLoading} activityError={activityError} onRetryActivity={()=>setActivityAttempt(value=>value+1)} onOpenTask={task=>{setSelected(task);setModal("edit")}} onStageTransition={(task,stage,note)=>note?requestTaskChanges(task.id,note):updateTaskStage(task.id,stage)} onAssignmentChange={(task,assignedUserId)=>reassignTask(task.id,assignedUserId)}/>:
+        view==="board"?<WorkBoard tasks={tasks} projects={projects} connections={connections} participantProfiles={boardProfiles} userId={user.id} activities={boardActivities} comments={boardComments} activityLoading={activityLoading} activityError={activityError} onRetryActivity={()=>setActivityAttempt(value=>value+1)} onOpenTask={task=>{setSelected(task);setModal("edit")}} onStageTransition={(task,stage,note)=>note?requestTaskChanges(task.id,note):updateTaskStage(task.id,stage)} onAssignmentChange={(task,assignedUserId)=>reassignTask(task.id,assignedUserId)} onAddComment={async(task,body)=>{const comment=await addTaskComment(task.id,body);setBoardComments(current=>current.some(item=>item.id===comment.id)?current:[...current,comment]);return comment}}/>:
         view==="people"?<PeopleView connections={connections} userId={user.id} request={requestConnection} answer={answerConnection} remove={removeConnection} notify={notify}/>:
         view==="projects"?<ProjectsView projects={projects} tasks={tasks} add={addProject} remove={removeProject} changeColor={changeProjectColor} pending={projectPending}/>:
         <>
