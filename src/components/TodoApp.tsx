@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Archive, CalendarDays, Check, CheckCircle2, Circle, Loader2,
-  Clock3, Folder, Inbox, LayoutGrid, Menu, Moon, MoreHorizontal, PanelLeftClose,
+  Clock3, Columns3, Folder, Inbox, LayoutGrid, Menu, Moon, MoreHorizontal, PanelLeftClose,
   PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Settings, Sparkles, Sun, Trash2, UserPlus, Users, X
 } from "lucide-react";
 import { Connection, Priority, Project, Task, TaskSearchIntent, TaskStage, View } from "@/lib/types";
@@ -13,6 +13,9 @@ import { SignOutButton } from "@/components/auth/SignOutButton";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { ReminderPanel } from "@/components/ReminderPanel";
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
+import { WorkBoard } from "@/components/WorkBoard";
+import { getTaskActivities, type TaskActivity } from "@/services/taskActivityService";
+import { getParticipantProfiles, type ParticipantProfile } from "@/services/profileService";
 
 type TaskDraft = { title:string; description:string; priority:Priority; dueDate:string; dueTime:string; reminderMinutes:string; projectId:string; assignedUserId:string; tags:string };
 const emptyDraft: TaskDraft = { title:"", description:"", priority:"medium", dueDate:"", dueTime:"", reminderMinutes:"", projectId:"", assignedUserId:"", tags:"" };
@@ -95,7 +98,7 @@ function ConfirmDialog({title,body,onCancel,onConfirm}:{title:string;body:string
 type AuthUser = { id: string; name: string; email: string; avatarUrl: string | null };
 
 export function TodoApp({ user }: { user: AuthUser }) {
-  const {tasks,projects,connections,loading,error,retry,createProject,updateProject,deleteProject,createTask,updateTask,updateTaskStage,setTaskCompleted,deleteTask,clearCompleted,resetWorkspace,requestConnection,answerConnection,removeConnection}=useWorkspace();
+  const {tasks,projects,connections,loading,error,retry,createProject,updateProject,deleteProject,createTask,updateTask,updateTaskStage,requestTaskChanges,reassignTask,setTaskCompleted,deleteTask,clearCompleted,resetWorkspace,requestConnection,answerConnection,removeConnection}=useWorkspace(user.id);
   const [preferencesLoaded,setPreferencesLoaded]=useState(false),[view,setView]=useState<View>("all"),[query,setQuery]=useState("");
   const [aiIntent,setAiIntent]=useState<TaskSearchIntent>({}),[interpreting,setInterpreting]=useState(false),[searchSource,setSearchSource]=useState<"ai"|"local"|null>(null),[searchOpen,setSearchOpen]=useState(false),[recentSearches,setRecentSearches]=useState<string[]>([]);
   const [priority,setPriority]=useState("all"),[status,setStatus]=useState("all"),[projectFilter,setProjectFilter]=useState("all"),[sort,setSort]=useState("newest");
@@ -104,6 +107,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
   const [projectModal,setProjectModal]=useState(false);
   const [pendingTasks,setPendingTasks]=useState<Set<string>>(new Set()),[projectPending,setProjectPending]=useState(false);
   const [toast,setToast]=useState("");
+  const [boardActivities,setBoardActivities]=useState<TaskActivity[]>([]),[boardProfiles,setBoardProfiles]=useState<ParticipantProfile[]>([]),[activityLoading,setActivityLoading]=useState(false),[activityError,setActivityError]=useState(""),[activityAttempt,setActivityAttempt]=useState(0);
   const searchRef=useRef<HTMLInputElement>(null);
 
   useEffect(()=>{try{const read=(key:string)=>localStorage.getItem(`flowdesk.${key}`)??localStorage.getItem(`tideline.${key}`);const th=read("theme"),r=read("searches");setTheme(th==="light"?"light":"dark");setRecentSearches(r?JSON.parse(r):[]);["flowdesk.tasks","flowdesk.projects","tideline.tasks","tideline.projects","flowdesk.workspaceDraft.tasks","flowdesk.workspaceDraft.projects"].forEach(key=>localStorage.removeItem(key))}catch{setTheme("dark");setRecentSearches([])}setPreferencesLoaded(true)},[]);
@@ -124,6 +128,21 @@ export function TodoApp({ user }: { user: AuthUser }) {
     },450);
     return()=>{clearTimeout(timer);controller.abort()};
   },[query,projects]);
+  const collaborativeActivityKey=useMemo(()=>tasks.filter(task=>task.assignedUserId&&(task.ownerId===user.id||task.assignedUserId===user.id)).map(task=>`${task.id}:${task.updatedAt}`).sort().join("|"),[tasks,user.id]);
+  useEffect(()=>{
+    if(view!=="board")return;
+    const collaborativeTasks=tasks.filter(task=>task.assignedUserId&&(task.ownerId===user.id||task.assignedUserId===user.id));
+    const taskIds=collaborativeTasks.map(task=>task.id);
+    const participantIds=collaborativeTasks.flatMap(task=>[task.ownerId,task.assignedUserId]).filter((id):id is string=>Boolean(id));
+    if(taskIds.length===0){setBoardActivities([]);setBoardProfiles([]);setActivityError("");setActivityLoading(false);return}
+    let active=true;
+    setActivityLoading(true);setActivityError("");
+    Promise.all([getTaskActivities(taskIds),getParticipantProfiles(participantIds)])
+      .then(([items,profiles])=>{if(active){setBoardActivities(items);setBoardProfiles(profiles)}})
+      .catch(activityLoadError=>{if(active){setActivityError(activityLoadError instanceof Error?activityLoadError.message:"Unable to load task activity.");setBoardActivities([]);setBoardProfiles([])}})
+      .finally(()=>{if(active)setActivityLoading(false)});
+    return()=>{active=false};
+  },[activityAttempt,collaborativeActivityKey,tasks,user.id,view]);
 
   const notify=(m:string)=>setToast(m);
   const project=(id?:string)=>projects.find(p=>p.id===id);
@@ -177,8 +196,8 @@ export function TodoApp({ user }: { user: AuthUser }) {
     if(tasks.length===0)return {title:"No tasks yet",body:"Create your first task to get started.",action:true};
     return {title:"No tasks found",body:"Try changing your filters.",action:false};
   };
-  const titles:Record<View,[string,string]>={all:["All tasks","Your command center for focused work"],today:["Today",new Intl.DateTimeFormat("en",{weekday:"long",month:"long",day:"numeric"}).format(new Date())],upcoming:["Upcoming","Plan what’s ahead"],completed:["Completed","A record of progress"],projects:["Projects","Organize work into clear spaces"],people:["People","Connect and collaborate"],settings:["Settings","Tune your workspace"]};
-  const nav=[{id:"all",label:"All tasks",icon:<Inbox/>},{id:"today",label:"Today",icon:<CalendarDays/>},{id:"upcoming",label:"Upcoming",icon:<Clock3/>},{id:"completed",label:"Completed",icon:<CheckCircle2/>}] as const;
+  const titles:Record<View,[string,string]>={all:["All tasks","Your command center for focused work"],today:["Today",new Intl.DateTimeFormat("en",{weekday:"long",month:"long",day:"numeric"}).format(new Date())],upcoming:["Upcoming","Plan what’s ahead"],completed:["Completed","A record of progress"],board:["Work Board","Collaborative work from assignment through approval"],projects:["Projects","Organize work into clear spaces"],people:["People","Connect and collaborate"],settings:["Settings","Tune your workspace"]};
+  const nav=[{id:"all",label:"All tasks",icon:<Inbox/>},{id:"today",label:"Today",icon:<CalendarDays/>},{id:"upcoming",label:"Upcoming",icon:<Clock3/>},{id:"completed",label:"Completed",icon:<CheckCircle2/>},{id:"board",label:"Work Board",icon:<Columns3/>}] as const;
   const go=(v:View)=>{setView(v);setMobileOpen(false)};
 
   if(loading||!preferencesLoaded)return <div className="loading"><div className="brand-mark"><Check/></div><div className="skeleton wide"/><div className="skeleton"/></div>;
@@ -189,7 +208,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
       <div className="brand"><div className="brand-mark"><Check/></div>{!collapsed&&<div><strong>FlowDesk</strong><span>FOCUS WORKSPACE</span></div>}<button className="mobile-close icon-btn" onClick={()=>setMobileOpen(false)}><X/></button></div>
       <nav aria-label="Main navigation">
         <span className="nav-label">{!collapsed&&"WORKSPACE"}</span>
-        {nav.map(n=><button key={n.id} title={n.label} className={view===n.id?"active":""} onClick={()=>go(n.id)}>{n.icon}{!collapsed&&<><span>{n.label}</span>{n.id==="all"&&<b>{tasks.length}</b>}</>}</button>)}
+        {nav.map(n=><button key={n.id} title={n.label} className={view===n.id?"active":""} onClick={()=>go(n.id)}>{n.icon}{!collapsed&&<><span>{n.label}</span>{n.id==="all"&&<b>{tasks.length}</b>}{n.id==="board"&&<b>{tasks.filter(task=>task.assignedUserId).length}</b>}</>}</button>)}
         <span className="nav-label">{!collapsed&&"MANAGE"}</span>
         <button className={view==="projects"?"active":""} onClick={()=>go("projects")}><Folder/>{!collapsed&&<span>Projects</span>}</button>
         <button className={view==="people"?"active":""} onClick={()=>go("people")}><Users/>{!collapsed&&<span>People</span>}</button>
@@ -202,6 +221,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
       <header><button className="menu-btn icon-btn" onClick={()=>setMobileOpen(true)} aria-label="Open navigation"><Menu/></button><div className="page-title"><span>FLOWDESK / TASKS</span><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div><div className="header-actions"><button className="mobile-search-btn icon-btn" aria-label="Search tasks" onClick={()=>{setSearchOpen(true);requestAnimationFrame(()=>searchRef.current?.focus())}}><Search/></button><div className={`search-wrap ${searchOpen?"expanded":""}`}><form className="search" onSubmit={e=>{e.preventDefault();commitSearch()}}><Sparkles className="ai-spark"/><input ref={searchRef} aria-label="Search tasks with natural language" value={query} onFocus={()=>setSearchOpen(true)} onChange={e=>setQuery(e.target.value)} placeholder="Ask FlowDesk…"/>{interpreting?<Loader2 className="spin"/>:<kbd>⌘ K</kbd>}{query&&<button type="button" aria-label="Clear search" onClick={()=>setQuery("")}><X/></button>}</form>{searchOpen&&<div className="search-popover"><div className="search-status"><span><Sparkles/> SMART SEARCH</span>{interpreting?<em><Loader2 className="spin"/> Interpreting query</em>:query&&<em>{searchSource==="ai"?"AI interpreted":"Local interpretation"}</em>}</div>{intentChips.length>0&&<div className="intent-area"><small>APPLIED INTENT</small><div className="intent-chips">{intentChips.map((chip,i)=><button type="button" key={`${chip.key}-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}</div></div>}{!query&&<><small className="popover-label">{recentSearches.length?"RECENT SEARCHES":"TRY ASKING"}</small>{(recentSearches.length?recentSearches:["show tasks due next week","find unfinished product work","what have I ignored?"]).map(item=><button type="button" className="suggestion" key={item} onClick={()=>{setQuery(item);commitSearch(item)}}><Search/><span>{item}</span><kbd>↵</kbd></button>)}</>}{query&&<div className="result-preview"><strong>{filtered.length} matching {filtered.length===1?"task":"tasks"}</strong><span>Press Enter to keep this search</span></div>}</div>}</div><button className="icon-btn" onClick={()=>setTheme(theme==="dark"?"light":"dark")} aria-label="Toggle theme">{theme==="dark"?<Sun/>:<Moon/>}</button><ReminderPanel tasks={tasks} projects={projects} userKey={user.email} onOpenTask={task=>{setSelected(task);setModal("edit")}}/><button className="btn primary new-task" onClick={()=>{setSelected(undefined);setModal("new")}}><Plus/>New task</button></div></header>
       <div className="content">
         {view==="settings"?<><NotificationSettings/><SettingsView theme={theme} setTheme={setTheme} clearCompleted={async()=>{try{await clearCompleted();notify("Completed tasks cleared")}catch(error){reportMutationError("clear completed tasks",error)}}} reset={async()=>{try{await resetWorkspace();notify("Workspace reset")}catch(error){reportMutationError("reset the workspace",error)}}}/></>:
+        view==="board"?<WorkBoard tasks={tasks} projects={projects} connections={connections} participantProfiles={boardProfiles} userId={user.id} activities={boardActivities} activityLoading={activityLoading} activityError={activityError} onRetryActivity={()=>setActivityAttempt(value=>value+1)} onOpenTask={task=>{setSelected(task);setModal("edit")}} onStageTransition={(task,stage,note)=>note?requestTaskChanges(task.id,note):updateTaskStage(task.id,stage)} onAssignmentChange={(task,assignedUserId)=>reassignTask(task.id,assignedUserId)}/>:
         view==="people"?<PeopleView connections={connections} userId={user.id} request={requestConnection} answer={answerConnection} remove={removeConnection} notify={notify}/>:
         view==="projects"?<ProjectsView projects={projects} tasks={tasks} add={addProject} remove={removeProject} changeColor={changeProjectColor} pending={projectPending}/>:
         <>
@@ -217,7 +237,7 @@ export function TodoApp({ user }: { user: AuthUser }) {
             <div className="toolbar"><div className="filter-group"><select aria-label="Filter status" value={status} onChange={e=>setStatus(e.target.value)}><option value="all">All statuses</option><option value="pending">Pending</option><option value="completed">Completed</option></select><select aria-label="Filter priority" value={priority} onChange={e=>setPriority(e.target.value)}><option value="all">All priorities</option><option value="high">High priority</option><option value="medium">Medium priority</option><option value="low">Low priority</option></select><select aria-label="Filter project" value={projectFilter} onChange={e=>setProjectFilter(e.target.value)}><option value="all">All projects</option>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select>{(status!=="all"||priority!=="all"||projectFilter!=="all")&&<button className="clear" onClick={()=>{setStatus("all");setPriority("all");setProjectFilter("all")}}>Clear filters <X/></button>}</div><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort tasks"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="due">Due date</option><option value="priority">Priority</option><option value="alpha">A–Z</option></select></div>
             {query&&intentChips.length>0&&<div className="inline-intent"><Sparkles/><span>Interpreted</span>{intentChips.map((chip,i)=><button key={`${chip.key}-inline-${i}`} onClick={()=>removeIntent(chip.key)}>{chip.label}<X/></button>)}<button onClick={()=>setQuery("")}>Clear all</button></div>}
             {filtered.length?<div className="task-list"><div className="table-head"><span>Task</span><span>Project</span><span>Priority</span><span>Due date</span><span/></div>{filtered.map(task=><div className={`task-row ${task.completed?"done":""}`} key={task.id}>
-              <div className="task-main"><button className="check-btn" disabled={pendingTasks.has(task.id)||task.ownerId!==user.id} onClick={()=>toggle(task)} aria-label={`${task.completed?"Restore":"Complete"} ${task.title}`}>{pendingTasks.has(task.id)?<Loader2 className="spin"/>:task.completed?<Check/>:<Circle/>}</button><button className="task-copy" onClick={()=>{setSelected(task);setModal("edit")}}><strong>{task.title}</strong><span>{task.description||"No additional notes"}{task.tags?.map(tag=><em key={tag}>#{tag}</em>)}</span>{task.assignedUserId&&<small className={`stage ${task.stage}`}>{task.stage}</small>}</button></div>
+              <div className="task-main"><button className="check-btn" disabled={pendingTasks.has(task.id)||task.ownerId!==user.id||Boolean(task.assignedUserId)} onClick={()=>toggle(task)} aria-label={`${task.completed?"Restore":"Complete"} ${task.title}`} title={task.assignedUserId?"Collaborative tasks complete when the owner approves them.":undefined}>{pendingTasks.has(task.id)?<Loader2 className="spin"/>:task.completed?<Check/>:<Circle/>}</button><button className="task-copy" onClick={()=>{setSelected(task);setModal("edit")}}><strong>{task.title}</strong><span>{task.description||"No additional notes"}{task.tags?.map(tag=><em key={tag}>#{tag}</em>)}</span>{task.assignedUserId&&<small className={`stage ${task.stage}`}>{task.stage}</small>}</button></div>
               <div className="project-cell">{project(task.projectId)?<><i style={{background:project(task.projectId)?.color}}/>{project(task.projectId)?.name}</>:<span>—</span>}</div>
               <div><span className={`badge ${task.priority}`}><i/>{task.priority}</span></div>
               <div className={`due ${!task.completed&&task.dueDate&&task.dueDate<today()?"overdue":""}`}><CalendarDays/>{fmtDue(task)}</div>

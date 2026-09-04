@@ -32,6 +32,7 @@ FlowDesk is a polished, responsive task-management dashboard built with Next.js 
 - Authenticated, cross-device task and project persistence through Supabase
 - In-app reminders and optional standards-based browser push notifications
 - Exact-email user connections, task assignment, and reviewed/approved workflows
+- Responsive Work Board with collaboration filters, secure drag-and-drop, review notes, and activity history
 - Keyboard focus states and reduced-motion support
 
 ## Tech Stack
@@ -131,7 +132,7 @@ Device-specific preferences such as the selected theme and recent searches remai
 
 ## Collaboration workflow
 
-Apply `20260902000500_add_user_connections_and_task_workflow.sql` before deploying the collaboration UI. Users connect from the People tab by entering another FlowDesk user’s exact email address. The recipient must accept the request before tasks can be assigned.
+Apply `20260902000500_add_user_connections_and_task_workflow.sql`, `20260903000100_secure_profile_email_sync.sql`, and `20260903000200_collaborative_board_workflow.sql` before deploying the collaboration UI. Users connect from the People tab by entering another FlowDesk user’s exact email address. The recipient must accept the request before tasks can be assigned.
 
 Assigned tasks follow this workflow:
 
@@ -139,7 +140,11 @@ Assigned tasks follow this workflow:
 Assigned → Working → Reviewed → Approved
 ```
 
-The assignee starts work and submits it for review. The task owner approves reviewed work. Database policies and constrained RPC functions enforce participant access and workflow permissions; other users are not exposed through a browsable directory.
+The assignee starts work and submits it for review. The task owner can approve reviewed work or return it to Working with a review note. Approval marks the task complete inside the database workflow function. Reassignment and unassignment are owner-only, reset the workflow to Assigned, and accept only current connections; removing a connection does not invalidate work already assigned.
+
+The Work Board is another view of the same task rows used by the normal task lists. It provides All collaborative work, Assigned by me, and Assigned to me views; person/project filters; due-state indicators; a hide-approved control; desktop Kanban columns; and mobile stage tabs. Drag-and-drop calls the same constrained RPCs as the visible workflow buttons and rolls back when the database rejects a transition.
+
+`task_activity` stores trusted assignment and stage events. Its actor is derived from `auth.uid()` by database triggers, and RLS limits history to the task’s current owner or assignee. Supabase Realtime refreshes task and connection data while both participants have FlowDesk open. Scheduled due reminders continue to use the existing notification processor; collaboration-event push notifications are intentionally deferred in the lighter implementation.
 
 ## Optional AI Search
 

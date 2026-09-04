@@ -23,7 +23,7 @@ async function authenticatedClient() {
   return { supabase, user };
 }
 
-const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, due_at, reminder_minutes, assigned_user_id, stage, tags, completed_at, created_at, updated_at";
+const taskFields = "id, owner_id, project_id, title, description, completed, priority, due_date, due_time, due_at, reminder_minutes, assigned_user_id, stage, review_note, tags, completed_at, created_at, updated_at";
 
 function taskValues(input: TaskInput) {
   const title = input.title.trim();
@@ -77,6 +77,24 @@ export async function clearCompletedTasks() {
 export async function updateTaskStage(id: string, stage: TaskStage) {
   const { supabase } = await authenticatedClient();
   const { data, error } = await supabase.rpc("update_assigned_task_stage", { task_id: id, next_stage: stage });
+  if (error) throw new Error(error.message);
+  return data as TaskRow;
+}
+
+export async function requestTaskChanges(id: string, reviewNote: string) {
+  if (!id) throw new Error("Task ID is required.");
+  const note = reviewNote.trim();
+  if (!note) throw new Error("A review note is required.");
+  const { supabase } = await authenticatedClient();
+  const { data, error } = await supabase.rpc("request_task_changes", { task_id: id, review_note: note });
+  if (error) throw new Error(error.message);
+  return data as TaskRow;
+}
+
+export async function reassignTask(id: string, assignedUserId: string | null) {
+  if (!id) throw new Error("Task ID is required.");
+  const { supabase } = await authenticatedClient();
+  const { data, error } = await supabase.rpc("reassign_task", { task_id: id, new_assignee_id: assignedUserId });
   if (error) throw new Error(error.message);
   return data as TaskRow;
 }

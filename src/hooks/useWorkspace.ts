@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { mapProjectRow } from "@/lib/mappers/projectMapper";
 import { mapTaskRow } from "@/lib/mappers/taskMapper";
 import { Connection, Project, Task, TaskStage } from "@/lib/types";
+import { useWorkspaceRealtime } from "@/hooks/useWorkspaceRealtime";
 import { getConnections, removeConnection as removeConnectionRow, requestConnection as requestConnectionRow, respondToConnection } from "@/services/connectionService";
 import {
   createProject as createProjectRow,
@@ -17,13 +18,15 @@ import {
   createTask as createTaskRow,
   deleteTask as deleteTaskRow,
   getTasks,
+  reassignTask as reassignTaskRow,
+  requestTaskChanges as requestTaskChangesRow,
   setTaskCompleted as setTaskCompletedRow,
   TaskInput,
   updateTask as updateTaskRow,
   updateTaskStage as updateTaskStageRow,
 } from "@/services/taskService";
 
-export function useWorkspace() {
+export function useWorkspace(userId?: string) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -102,6 +105,18 @@ export function useWorkspace() {
     return task;
   }, []);
 
+  const requestTaskChanges = useCallback(async (id: string, note: string) => {
+    const task = mapTaskRow(await requestTaskChangesRow(id, note));
+    setTasks(current => current.map(item => item.id === id ? task : item));
+    return task;
+  }, []);
+
+  const reassignTask = useCallback(async (id: string, assignedUserId: string | null) => {
+    const task = mapTaskRow(await reassignTaskRow(id, assignedUserId));
+    setTasks(current => current.map(item => item.id === id ? task : item));
+    return task;
+  }, []);
+
   const requestConnection = useCallback(async (email: string) => { await requestConnectionRow(email); await refreshConnections(); }, [refreshConnections]);
   const answerConnection = useCallback(async (id: string, response: "accepted" | "rejected") => { await respondToConnection(id, response); await refreshConnections(); }, [refreshConnections]);
   const removeConnection = useCallback(async (id: string) => { await removeConnectionRow(id); setConnections(current => current.filter(item => item.id !== id)); }, []);
@@ -113,20 +128,27 @@ export function useWorkspace() {
 
   const clearCompleted = useCallback(async () => {
     await clearCompletedTasks();
-    setTasks(current => current.filter(task => !task.completed));
-  }, []);
+    await refreshTasks();
+  }, [refreshTasks]);
 
   const resetWorkspace = useCallback(async () => {
-    await Promise.all(tasks.map(task => deleteTaskRow(task.id)));
+    await Promise.all(tasks.filter(task => task.ownerId === userId).map(task => deleteTaskRow(task.id)));
     await Promise.all(projects.map(project => deleteProjectRow(project.id)));
-    setTasks([]);
+    setTasks(current => current.filter(task => task.ownerId !== userId));
     setProjects([]);
-  }, [projects, tasks]);
+  }, [projects, tasks, userId]);
+
+  useWorkspaceRealtime({
+    userId,
+    refreshTasks,
+    refreshConnections,
+    onError: realtimeError => console.error("Unable to synchronize collaborative workspace changes.", realtimeError),
+  });
 
   return {
     tasks, projects, connections, loading, error,
     createProject, updateProject, deleteProject,
-    createTask, updateTask, updateTaskStage, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
+    createTask, updateTask, updateTaskStage, requestTaskChanges, reassignTask, setTaskCompleted, deleteTask, clearCompleted, resetWorkspace,
     requestConnection, answerConnection, removeConnection, refreshTasks, refreshConnections,
     retry: () => setAttempt(value => value + 1),
   };

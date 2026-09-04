@@ -91,6 +91,17 @@ using (
     where (select auth.uid()) in (task.owner_id, task.assigned_user_id)
       and profiles.id in (task.owner_id, task.assigned_user_id)
   )
+  or exists (
+    select 1
+    from public.task_activity as activity
+    join public.tasks as task on task.id = activity.task_id
+    where (select auth.uid()) in (task.owner_id, task.assigned_user_id)
+      and profiles.id in (
+        activity.actor_user_id,
+        activity.from_assignee_id,
+        activity.to_assignee_id
+      )
+  )
 );
 
 -- Validate only a newly created or actually changed assignment. This is
@@ -656,6 +667,16 @@ begin
         and published.tablename = 'task_activity'
     ) then
       execute 'alter publication supabase_realtime add table public.task_activity';
+    end if;
+
+    if not exists (
+      select 1
+      from pg_catalog.pg_publication_tables as published
+      where published.pubname = 'supabase_realtime'
+        and published.schemaname = 'public'
+        and published.tablename = 'user_connections'
+    ) then
+      execute 'alter publication supabase_realtime add table public.user_connections';
     end if;
   end if;
 end;

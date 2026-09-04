@@ -15,36 +15,42 @@ import {
   Pencil,
   RotateCcw,
   UserRound,
-  Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getReminderState, getTaskDueAt, type ReminderState } from "@/lib/reminders";
 import type { Connection, ConnectionProfile, Project, Task, TaskStage } from "@/lib/types";
+import { canTransitionTask, filterCollaborativeTasks, getTaskTransitionAction, type CollaborationView } from "@/lib/workflow";
 
-export type WorkBoardView = "all" | "by-me" | "to-me";
+export type WorkBoardView = CollaborationView;
+
+type WorkBoardProfile = Omit<ConnectionProfile, "email"> & { email?: string };
 
 export interface WorkBoardActivity {
   id: string;
   taskId: string;
-  actorUserId: string;
+  actorUserId?: string;
   eventType: string;
   fromStage?: TaskStage | null;
   toStage?: TaskStage | null;
-  reviewNote?: string | null;
+  note?: string | null;
   createdAt: string;
-  actor?: ConnectionProfile;
+  actor?: WorkBoardProfile;
 }
 
 export interface WorkBoardProps {
   tasks: Task[];
   projects: Project[];
   connections: Connection[];
+  participantProfiles?: WorkBoardProfile[];
   userId: string;
   onOpenTask: (task: Task) => void;
   onStageTransition: (task: Task, stage: TaskStage, reviewNote?: string) => Promise<unknown>;
   onAssignmentChange: (task: Task, assignedUserId: string | null) => Promise<unknown>;
   activities?: WorkBoardActivity[];
+  activityLoading?: boolean;
+  activityError?: string | null;
+  onRetryActivity?: () => void;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -76,18 +82,18 @@ const eventLabels: Record<string, string> = {
   unassigned: "unassigned this task",
 };
 
-function initials(profile?: ConnectionProfile) {
+function initials(profile?: WorkBoardProfile) {
   const source = profile?.fullName?.trim() || profile?.email?.trim() || "?";
   return source.split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase()).join("") || "?";
 }
 
-function avatarStyle(profile?: ConnectionProfile) {
+function avatarStyle(profile?: WorkBoardProfile) {
   return profile?.avatarUrl
     ? { backgroundImage: `url(${JSON.stringify(profile.avatarUrl)})` }
     : undefined;
 }
 
-function displayName(profile: ConnectionProfile | undefined, id: string | undefined, userId: string) {
+function displayName(profile: WorkBoardProfile | undefined, id: string | undefined, userId: string) {
   if (id === userId) return "You";
   return profile?.fullName || profile?.email || "FlowDesk user";
 }
@@ -122,38 +128,23 @@ function dueLabel(task: Task, now: Date) {
   if (tone === "due-soon") return `Due soon · ${formatDue(task)}`;
   if (tone === "today") return `Due today · ${formatDue(task)}`;
   if (tone === "tomorrow") return `Due tomorrow · ${formatDue(task)}`;
+  if (tone === "upcoming") return `Upcoming · ${formatDue(task)}`;
   return formatDue(task);
-}
-
-function canTransition(task: Task, target: TaskStage, userId: string) {
-  const current = task.stage || "assigned";
-  if (target === "working" && current === "assigned") return task.assignedUserId === userId;
-  if (target === "reviewed" && current === "working") return task.assignedUserId === userId;
-  if (target === "approved" && current === "reviewed") return task.ownerId === userId;
-  if (target === "working" && current === "reviewed") return task.ownerId === userId;
-  return false;
-}
-
-function transitionAction(task: Task, userId: string) {
-  const stage = task.stage || "assigned";
-  if (stage === "assigned" && task.assignedUserId === userId) {
-    return { label: "Start work", stage: "working" as const };
-  }
-  if (stage === "working" && task.assignedUserId === userId) {
-    return { label: "Submit for review", stage: "reviewed" as const };
-  }
-  return null;
 }
 
 export function WorkBoard({
   tasks,
   projects,
   connections,
+  participantProfiles = [],
   userId,
   onOpenTask,
   onStageTransition,
   onAssignmentChange,
   activities = [],
+  activityLoading = false,
+  activityError = null,
+  onRetryActivity,
   loading = false,
   error = null,
   onRetry,
@@ -230,13 +221,14 @@ export function WorkBoard({
   }, [feedback]);
 
   const profiles = useMemo(() => {
-    const byId = new Map<string, ConnectionProfile>();
+    const byId = new Map<string, WorkBoardProfile>();
     connections.forEach(connection => {
       byId.set(connection.requester.id, connection.requester);
       byId.set(connection.addressee.id, connection.addressee);
     });
+    participantProfiles.forEach(profile => byId.set(profile.id, profile));
     return byId;
-  }, [connections]);
+  }, [connections, participantProfiles]);
 
   const people = useMemo(() => {
     const byId = new Map<string, ConnectionProfile>();
@@ -259,15 +251,10 @@ export function WorkBoard({
     };
   }), [patches, tasks]);
 
-  const collaborativeTasks = useMemo(() => displayTasks.filter(task => {
-    if (!task.assignedUserId) return false;
-    if (task.ownerId !== userId && task.assignedUserId !== userId) return false;
-    if (view === "by-me" && task.ownerId !== userId) return false;
-    if (view === "to-me" && task.assignedUserId !== userId) return false;
-    if (personId !== "all" && task.ownerId !== personId && task.assignedUserId !== personId) return false;
-    if (projectId !== "all" && task.projectId !== projectId) return false;
-    return true;
-  }), [displayTasks, personId, projectId, userId, view]);
+  const collaborativeTasks = useMemo(
+    () => filterCollaborativeTasks(displayTasks, userId, view, personId, projectId),
+    [displayTasks, personId, projectId, userId, view],
+  );
 
   const grouped = useMemo(() => Object.fromEntries(stages.map(stage => [
     stage.id,
@@ -293,7 +280,7 @@ export function WorkBoard({
   });
 
   const runTransition = async (task: Task, target: TaskStage, note?: string) => {
-    if (pending.has(task.id) || !canTransition(task, target, userId)) return;
+    if (pending.has(task.id) || !canTransitionTask(task, target, userId)) return;
     const previousPatch = patches[task.id];
     setFeedback(null);
     setTaskPending(task.id, true);
@@ -372,7 +359,7 @@ export function WorkBoard({
   const onDrop = (target: TaskStage) => {
     const task = draggedId ? displayTasks.find(item => item.id === draggedId) : undefined;
     setDraggedId(null);
-    if (!task || !canTransition(task, target, userId)) return;
+    if (!task || !canTransitionTask(task, target, userId)) return;
     if ((task.stage || "assigned") === "reviewed" && target === "working") {
       requestChanges(task);
       return;
@@ -424,6 +411,8 @@ export function WorkBoard({
       </label>
     </div>
 
+    {activityError && <div className="wb-inline-warning" role="alert"><AlertCircle/><span>Activity history is temporarily unavailable.</span>{onRetryActivity && <button type="button" onClick={onRetryActivity}>Retry</button>}</div>}
+
     <div className="wb-filters" aria-label="Board filters">
       <div className="wb-view-tabs" role="group" aria-label="Assignment view">
         {(Object.keys(viewLabels) as WorkBoardView[]).map(option => <button
@@ -463,7 +452,7 @@ export function WorkBoard({
       {stages.filter(stage => showApproved || stage.id !== "approved").map(stage => {
         const reviewCount = stage.id === "reviewed" ? grouped.reviewed.filter(task => task.ownerId === userId).length : 0;
         const draggedTask = draggedId ? displayTasks.find(task => task.id === draggedId) : undefined;
-        const canDrop = Boolean(draggedTask && canTransition(draggedTask, stage.id, userId));
+        const canDrop = Boolean(draggedTask && canTransitionTask(draggedTask, stage.id, userId));
         return <section
           className={`wb-column stage-${stage.id} ${canDrop ? "can-drop" : ""}`}
           data-stage={stage.id}
@@ -482,9 +471,9 @@ export function WorkBoard({
               const owner = task.ownerId ? profiles.get(task.ownerId) : undefined;
               const project = projects.find(item => item.id === task.projectId);
               const tone = dueTone(task, now);
-              const action = transitionAction(task, userId);
+              const action = getTaskTransitionAction(task, userId);
               const isPending = pending.has(task.id);
-              const draggable = !isPending && stages.some(target => canTransition(task, target.id, userId));
+              const draggable = !isPending && stages.some(target => canTransitionTask(task, target.id, userId));
               return <article
                 className={`wb-card due-${tone} ${draggedId === task.id ? "dragging" : ""} ${isPending ? "pending" : ""}`}
                 key={task.id}
@@ -541,21 +530,21 @@ export function WorkBoard({
 
         {selectedTask.ownerId === userId && <label className="wb-reassign"><span>Assignee</span><select value={selectedTask.assignedUserId || ""} disabled={pending.has(selectedTask.id)} onChange={event => void runAssignmentChange(selectedTask, event.target.value || null)}><option value="">Unassigned</option>{people.map(person => <option value={person.id} key={person.id}>{person.fullName || person.email}</option>)}</select><small>Reassignment returns the workflow to Assigned.</small></label>}
 
-        {((selectedTask as Task & { reviewNote?: string }).reviewNote || selectedActivities.find(item => item.eventType === "changes_requested" && item.reviewNote)?.reviewNote) && <div className="wb-review-note"><strong><Pencil/>Review note</strong><p>{(selectedTask as Task & { reviewNote?: string }).reviewNote || selectedActivities.find(item => item.eventType === "changes_requested" && item.reviewNote)?.reviewNote}</p></div>}
+        {(selectedTask.reviewNote || selectedActivities.find(item => item.eventType === "changes_requested" && item.note)?.note) && <div className="wb-review-note"><strong><Pencil/>Review note</strong><p>{selectedTask.reviewNote || selectedActivities.find(item => item.eventType === "changes_requested" && item.note)?.note}</p></div>}
 
         {reviewTaskId === selectedTask.id && <div className="wb-review-form"><label htmlFor="wb-review-note">What needs to change?</label><textarea ref={reviewRef} id="wb-review-note" value={reviewNote} onChange={event => setReviewNote(event.target.value)} rows={3} placeholder="Please update the mobile layout before resubmitting."/><div><button type="button" className="wb-button wb-secondary" disabled={pending.has(selectedTask.id)} onClick={() => { setReviewTaskId(null); setReviewNote(""); }}>Cancel</button><button type="button" className="wb-button wb-primary" disabled={pending.has(selectedTask.id)} onClick={() => void submitChangesRequest(selectedTask)}>{pending.has(selectedTask.id) ? <Loader2 className="spin"/> : <RotateCcw/>}Request changes</button></div></div>}
 
         {reviewTaskId !== selectedTask.id && <div className="wb-detail-actions">
-          <button type="button" className="wb-button wb-secondary" onClick={() => { onOpenTask(selectedTask); setSelectedId(null); }}><Pencil/>Edit task</button>
-          {transitionAction(selectedTask, userId) && <button type="button" className="wb-button wb-primary" disabled={pending.has(selectedTask.id)} onClick={() => { const action = transitionAction(selectedTask, userId); if (action) void runTransition(selectedTask, action.stage); }}><ArrowRight/>{transitionAction(selectedTask, userId)?.label}</button>}
+          {selectedTask.ownerId === userId && <button type="button" className="wb-button wb-secondary" onClick={() => { onOpenTask(selectedTask); setSelectedId(null); }}><Pencil/>Edit task</button>}
+          {getTaskTransitionAction(selectedTask, userId) && <button type="button" className="wb-button wb-primary" disabled={pending.has(selectedTask.id)} onClick={() => { const action = getTaskTransitionAction(selectedTask, userId); if (action) void runTransition(selectedTask, action.stage); }}><ArrowRight/>{getTaskTransitionAction(selectedTask, userId)?.label}</button>}
           {selectedTask.stage === "reviewed" && selectedTask.ownerId === userId && <><button type="button" className="wb-button wb-secondary" disabled={pending.has(selectedTask.id)} onClick={() => requestChanges(selectedTask)}><RotateCcw/>Request changes</button><button type="button" className="wb-button wb-primary" disabled={pending.has(selectedTask.id)} onClick={() => void runTransition(selectedTask, "approved")}><Check/>Approve</button></>}
         </div>}
 
         <div className="wb-activity">
           <h3><Clock3/>Activity</h3>
-          {selectedActivities.length > 0 ? <ol>{selectedActivities.map(activity => {
-            const actor = activity.actor || profiles.get(activity.actorUserId);
-            return <li key={activity.id}><span className="wb-mini-avatar" style={avatarStyle(actor)}>{!actor?.avatarUrl && initials(actor)}</span><div><p><strong>{displayName(actor, activity.actorUserId, userId)}</strong> {eventLabels[activity.eventType] || activity.eventType.replaceAll("_", " ")}</p>{activity.reviewNote && <blockquote>{activity.reviewNote}</blockquote>}<time dateTime={activity.createdAt}>{formatDate(activity.createdAt, true)}</time></div></li>;
+          {activityLoading ? <div className="wb-activity-empty"><Loader2 className="spin"/><span>Loading activity…</span></div> : selectedActivities.length > 0 ? <ol>{selectedActivities.map(activity => {
+            const actor = activity.actor || (activity.actorUserId ? profiles.get(activity.actorUserId) : undefined);
+            return <li key={activity.id}><span className="wb-mini-avatar" style={avatarStyle(actor)}>{!actor?.avatarUrl && initials(actor)}</span><div><p><strong>{displayName(actor, activity.actorUserId, userId)}</strong> {eventLabels[activity.eventType] || activity.eventType.replaceAll("_", " ")}</p>{activity.note && <blockquote>{activity.note}</blockquote>}<time dateTime={activity.createdAt}>{formatDate(activity.createdAt, true)}</time></div></li>;
           })}</ol> : <div className="wb-activity-empty"><Clock3/><span>Workflow activity will appear here as the task moves.</span></div>}
         </div>
       </section>
@@ -568,7 +557,7 @@ function DetailValue({ label, value }: { label: string; value: string }) {
   return <div className="wb-detail-value"><span>{label}</span><strong>{value}</strong></div>;
 }
 
-function DetailPerson({ label, profile, id, userId }: { label: string; profile?: ConnectionProfile; id?: string; userId: string }) {
+function DetailPerson({ label, profile, id, userId }: { label: string; profile?: WorkBoardProfile; id?: string; userId: string }) {
   return <div className="wb-detail-value"><span>{label}</span><div className="wb-detail-person"><span className="wb-mini-avatar" style={avatarStyle(profile)}>{!profile?.avatarUrl && initials(profile)}</span><strong>{id ? displayName(profile, id, userId) : "Unassigned"}</strong></div></div>;
 }
 
@@ -581,8 +570,10 @@ function BoardStyles() {
     .wb-columns{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));align-items:start;gap:10px;overflow-x:auto;padding-bottom:8px}.wb-column{min-width:0;border:1px solid var(--border);border-radius:8px;background:var(--surface2);transition:border-color .15s,background .15s}.wb-column.can-drop{border-color:rgba(62,207,142,.52);background:var(--green-soft)}.wb-column>header{min-height:49px;padding:10px 11px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:6px;background:var(--surface);border-radius:8px 8px 0 0}.wb-column>header>div{display:flex;align-items:center;gap:7px;min-width:0}.wb-column>header i{width:7px;height:7px;border-radius:50%;background:var(--blue)}.wb-column.stage-working>header i{background:var(--amber)}.wb-column.stage-reviewed>header i{background:var(--wb-purple)}.wb-column.stage-approved>header i{background:var(--green)}.wb-column>header h3{font-size:10px;margin:0}.wb-column>header b{font-size:9px;padding:2px 6px;border-radius:99px;background:var(--surface3);color:var(--muted)}.wb-review-count{display:flex;align-items:center;gap:3px;font-size:7px;text-transform:uppercase;color:var(--wb-purple);white-space:nowrap}.wb-review-count svg{width:10px}.wb-card-list{padding:8px;display:flex;flex-direction:column;gap:8px;min-height:170px}
     .wb-card{position:relative;border:1px solid var(--border);border-radius:7px;background:var(--surface);box-shadow:0 2px 6px rgba(0,0,0,.07);transition:transform .15s,border-color .15s,opacity .15s}.wb-card:hover{border-color:var(--border2);transform:translateY(-1px)}.wb-card.dragging{opacity:.42;transform:rotate(1deg)}.wb-card.pending{opacity:.72}.wb-card.due-overdue{border-left:3px solid var(--red)}.wb-card.due-due-soon{border-left:3px solid var(--amber)}.wb-card-open{display:block;width:100%;border:0;background:transparent;color:inherit;text-align:left;padding:12px}.wb-card-open:focus-visible{outline:2px solid var(--green);outline-offset:-2px;border-radius:6px}.wb-card-meta{display:flex;align-items:center;justify-content:space-between}.wb-card-meta>svg{width:14px;color:var(--muted2);cursor:grab}.wb-priority{display:inline-flex;align-items:center;gap:5px;font:8px "DM Mono",monospace;text-transform:uppercase;letter-spacing:.05em}.wb-priority i{width:5px;height:5px;border-radius:50%}.wb-priority.priority-high{color:var(--red)}.wb-priority.priority-high i{background:var(--red)}.wb-priority.priority-medium{color:var(--amber)}.wb-priority.priority-medium i{background:var(--amber)}.wb-priority.priority-low{color:var(--blue)}.wb-priority.priority-low i{background:var(--blue)}.wb-card h4{font-size:12px;line-height:1.45;margin:12px 0 11px;overflow-wrap:anywhere}.wb-project{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--muted);margin-bottom:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-project svg{width:12px;flex:0 0 auto}.wb-project i{width:5px;height:5px;border-radius:2px;flex:0 0 auto}.wb-person-row{display:flex;align-items:center;gap:7px;padding:8px 0;border-top:1px solid var(--border)}.wb-mini-avatar{width:25px;height:25px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;background-color:var(--green-soft);background-position:center;background-size:cover;border:1px solid var(--border2);color:var(--green);font-size:8px;font-weight:700}.wb-person-row>span:last-child{display:flex;flex-direction:column;gap:1px;min-width:0}.wb-person-row small{font-size:7px;color:var(--muted2);text-transform:uppercase}.wb-person-row strong{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wb-owner-line{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:8px;margin:1px 0 8px}.wb-owner-line svg{width:11px}.wb-due{display:flex;align-items:center;gap:5px;font-size:8px;color:var(--muted);padding-top:8px;border-top:1px solid var(--border)}.wb-due svg{width:12px}.wb-due.due-overdue{color:var(--red);font-weight:700;text-transform:uppercase}.wb-due.due-due-soon{color:var(--amber);font-weight:700}.wb-due.due-today{color:var(--blue)}.wb-stage-line{display:flex;align-items:center;justify-content:space-between;margin-top:10px}.wb-stage-line>svg{width:13px;color:var(--muted2)}.wb-stage{display:inline-flex;padding:3px 6px;border-radius:4px;background:rgba(116,169,237,.09);color:var(--blue);font:8px "DM Mono",monospace;letter-spacing:.05em;text-transform:uppercase}.wb-stage.stage-working{color:var(--amber);background:rgba(243,185,95,.09)}.wb-stage.stage-reviewed{color:var(--wb-purple);background:var(--wb-purple-soft)}.wb-stage.stage-approved{color:var(--green);background:var(--green-soft)}.wb-card-actions{display:flex;gap:5px;flex-wrap:wrap;padding:8px;border-top:1px solid var(--border)}.wb-card-actions button{min-height:29px;display:inline-flex;align-items:center;justify-content:center;gap:4px;flex:1;border:1px solid rgba(62,207,142,.23);border-radius:4px;background:var(--green-soft);color:var(--green);font-size:8px;white-space:nowrap}.wb-card-actions button.request{color:var(--muted);background:transparent;border-color:var(--border2)}.wb-card-actions button.approve{color:var(--green)}.wb-card-actions svg{width:11px}.wb-card-actions button:disabled{opacity:.55}.wb-column-empty{min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:15px;text-align:center;color:var(--muted2)}.wb-column-empty svg{width:20px;opacity:.6}.wb-column-empty p{font-size:9px;line-height:1.55;margin:8px 0}.wb-column-empty strong{font-size:8px;color:var(--green)}
     .wb-empty-board{display:flex;align-items:center;gap:12px;padding:15px;margin-bottom:10px;border:1px dashed var(--border2);border-radius:8px;background:var(--surface)}.wb-empty-board>svg{width:25px;color:var(--green)}.wb-empty-board h3{font-size:11px;margin:0 0 4px}.wb-empty-board p{font-size:9px;color:var(--muted);margin:0}.wb-mobile-stages{display:none}
+    .wb-inline-warning{display:flex;align-items:center;gap:8px;padding:9px 11px;margin-bottom:10px;border:1px solid rgba(243,185,95,.3);border-radius:7px;background:rgba(243,185,95,.07);color:var(--amber);font-size:9px}.wb-inline-warning svg{width:14px}.wb-inline-warning button{margin-left:auto;border:0;background:transparent;color:inherit;font-weight:700}
     .wb-overlay{position:fixed;inset:0;z-index:110;background:rgba(4,7,5,.72);backdrop-filter:blur(6px);display:flex;justify-content:flex-end;padding:12px;animation:fade .15s ease}.wb-detail{width:min(510px,100%);height:100%;overflow:auto;border:1px solid var(--border2);border-radius:10px;background:var(--surface);box-shadow:var(--shadow);padding:24px;animation:wb-slide-in .2s ease}.wb-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding-bottom:18px;border-bottom:1px solid var(--border)}.wb-detail-head h2{font-size:19px;line-height:1.35;margin:0}.wb-icon-button{width:34px;height:34px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--muted);display:grid;place-items:center;flex:0 0 auto}.wb-icon-button svg{width:15px}.wb-description{font-size:11px;line-height:1.7;color:var(--muted);padding:16px 0;margin:0;border-bottom:1px solid var(--border);white-space:pre-wrap}.wb-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:7px 0 18px}.wb-detail-value{min-height:66px;padding:12px 7px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:6px}.wb-detail-value>span{font:8px "DM Mono",monospace;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2)}.wb-detail-value>strong{font-size:10px}.wb-detail-person{display:flex;align-items:center;gap:7px}.wb-detail-person strong{font-size:10px}.wb-reassign{display:flex;flex-direction:column;gap:6px;padding:13px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);font-size:9px;color:var(--muted)}.wb-reassign>span{font-weight:700;color:var(--text)}.wb-reassign select{width:100%}.wb-reassign small{font-size:8px}.wb-review-note{margin-top:14px;padding:13px;border:1px solid rgba(167,139,250,.22);border-radius:7px;background:var(--wb-purple-soft)}.wb-review-note strong{display:flex;align-items:center;gap:6px;color:var(--wb-purple);font-size:10px}.wb-review-note svg{width:13px}.wb-review-note p{font-size:10px;line-height:1.55;margin:7px 0 0}.wb-review-form{margin-top:14px;padding:14px;border:1px solid rgba(167,139,250,.26);border-radius:7px;background:var(--wb-purple-soft)}.wb-review-form>label{display:block;font-size:10px;font-weight:700;margin-bottom:7px}.wb-review-form textarea{width:100%;padding:10px;color:var(--text);font-size:11px;resize:vertical}.wb-review-form>div{display:flex;justify-content:flex-end;gap:7px;margin-top:9px}.wb-detail-actions{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap;margin-top:16px}.wb-button{min-height:35px;padding:0 11px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:9px}.wb-button svg{width:13px}.wb-primary{border:1px solid var(--green);background:var(--green);color:#063923;font-weight:700}.wb-secondary{border:1px solid var(--border2);background:var(--surface2);color:var(--text)}.wb-button:disabled{opacity:.55}.wb-activity{margin-top:23px;padding-top:18px;border-top:1px solid var(--border)}.wb-activity h3{display:flex;align-items:center;gap:7px;font-size:11px;margin:0 0 14px}.wb-activity h3 svg{width:14px;color:var(--green)}.wb-activity ol{list-style:none;padding:0;margin:0}.wb-activity li{display:flex;gap:9px;position:relative;padding-bottom:15px}.wb-activity li:not(:last-child):before{content:"";position:absolute;left:12px;top:27px;bottom:2px;width:1px;background:var(--border)}.wb-activity li>div{min-width:0}.wb-activity p{font-size:9px;margin:2px 0 3px}.wb-activity time{font-size:8px;color:var(--muted2)}.wb-activity blockquote{font-size:9px;color:var(--muted);margin:5px 0;padding:7px 9px;border-left:2px solid var(--wb-purple);background:var(--surface2)}.wb-activity-empty{min-height:72px;border:1px dashed var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--muted2);font-size:9px}.wb-activity-empty svg{width:15px}
     .wb-feedback{position:fixed;right:20px;bottom:20px;z-index:140;max-width:min(390px,calc(100vw - 30px));display:flex;align-items:center;gap:8px;padding:11px 13px;border:1px solid var(--border2);border-radius:7px;background:var(--surface);box-shadow:var(--shadow);font-size:9px}.wb-feedback.success>svg{color:var(--green)}.wb-feedback.error{border-color:rgba(248,113,113,.35)}.wb-feedback.error>svg{color:var(--red)}.wb-feedback>svg{width:15px;flex:0 0 auto}.wb-feedback>button{margin-left:auto;border:0;background:transparent;color:var(--muted);padding:2px}.wb-feedback>button svg{width:13px}.work-board-state{min-height:300px;border:1px solid var(--border);border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;gap:13px}.work-board-state>svg{width:25px;color:var(--green)}.work-board-state h2{font-size:13px;margin:0 0 5px}.work-board-state p{font-size:10px;color:var(--muted);margin:0 0 10px}
+    .wb-column>header{height:auto;position:static;top:auto;z-index:auto;backdrop-filter:none}
     @keyframes wb-slide-in{from{opacity:0;transform:translateX(15px)}to{opacity:1;transform:none}}
     @media(max-width:1100px){.wb-filters{grid-template-columns:1fr 145px 145px}.wb-summary{overflow-x:auto}.wb-summary-title{position:sticky;left:0;z-index:1;background:var(--surface)}}
     @media(max-width:760px){.wb-topline{align-items:flex-start}.wb-filters{grid-template-columns:1fr 1fr}.wb-view-tabs{grid-column:1/-1;overflow-x:auto}.wb-view-tabs button{min-width:max-content}.wb-summary{display:grid;grid-template-columns:repeat(2,1fr);overflow:visible}.wb-summary-title{grid-column:1/-1;position:static;border-right:0;border-bottom:1px solid var(--border)}.wb-summary-stat{border-bottom:1px solid var(--border)}.wb-summary-stat:nth-child(odd){border-right:0}.wb-mobile-stages{display:flex;gap:5px;overflow-x:auto;margin-bottom:9px;padding-bottom:2px}.wb-mobile-stages button{min-width:max-content;height:37px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--muted);padding:0 10px;display:flex;align-items:center;gap:7px;font-size:9px}.wb-mobile-stages button b{font-size:8px;background:var(--surface3);border-radius:99px;padding:2px 5px}.wb-mobile-stages button.active{border-color:rgba(62,207,142,.35);background:var(--green-soft);color:var(--green)}.wb-columns{display:block;overflow:visible}.wb-column{display:none}.wb-columns[data-mobile-stage="assigned"] .wb-column[data-stage="assigned"],.wb-columns[data-mobile-stage="working"] .wb-column[data-stage="working"],.wb-columns[data-mobile-stage="reviewed"] .wb-column[data-stage="reviewed"],.wb-columns[data-mobile-stage="approved"] .wb-column[data-stage="approved"]{display:block}.wb-card-list{min-height:230px}.wb-card{max-width:none}.wb-card-open{padding:14px}.wb-card-actions button{min-height:38px;font-size:9px}.wb-overlay{padding:0;align-items:flex-end}.wb-detail{width:100%;height:min(92vh,760px);border-radius:12px 12px 0 0;padding:20px}.wb-detail-grid{grid-template-columns:1fr}.wb-detail-value{min-height:58px}.wb-detail-actions{display:grid;grid-template-columns:1fr}.wb-detail-actions .wb-button{width:100%;min-height:42px}.wb-review-form>div{display:grid;grid-template-columns:1fr}.wb-review-form .wb-button{width:100%;min-height:42px}.wb-feedback{left:15px;right:15px;bottom:15px;max-width:none}}

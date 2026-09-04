@@ -14,6 +14,7 @@ export interface TaskRow {
   reminder_minutes: 15 | 60 | 1440 | null;
   assigned_user_id: string | null;
   stage: TaskStage;
+  review_note: string | null;
   tags: string[] | null;
   completed_at: string | null;
   created_at: string;
@@ -35,6 +36,7 @@ export function mapTaskRow(row: TaskRow): Task {
     reminderMinutes: row.reminder_minutes ?? undefined,
     assignedUserId: row.assigned_user_id ?? undefined,
     stage: row.stage,
+    reviewNote: row.review_note ?? undefined,
     tags: row.tags ?? [],
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at,
