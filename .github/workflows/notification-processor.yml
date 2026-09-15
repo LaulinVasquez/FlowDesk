@@ -21,6 +21,6 @@ jobs:
         run: |
           test -n "$FLOWDESK_URL"
           test -n "$CRON_SECRET"
-          curl --fail --silent --show-error --retry 2 \
+          curl --fail-with-body --silent --show-error --retry 2 \
             -H "Authorization: Bearer $CRON_SECRET" \
             "${FLOWDESK_URL%/}/api/notifications/process"
