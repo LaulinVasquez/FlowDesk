@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const supabase = createAdminClient();
-    const push = configureWebPush();
+    let push: ReturnType<typeof configureWebPush> | undefined;
     const now = new Date();
     const { data: tasks, error } = await supabase.from("tasks").select("id, owner_id, assigned_user_id, title, due_at, reminder_minutes").eq("completed", false).not("due_at", "is", null).lte("due_at", new Date(now.getTime() + 86_400_000).toISOString()).gte("due_at", new Date(now.getTime() - 86_400_000).toISOString());
     if (error) throw error;
@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
       const reminderAt = reminderTime(task.due_at, minutes).toISOString();
       const { data: subscriptions } = await supabase.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", recipientId);
       for (const subscription of subscriptions || []) {
+        // Validate push configuration before claiming a delivery so a setup failure
+        // cannot suppress a reminder on the next run. Idle runs need no VAPID keys.
+        push ??= configureWebPush();
         const { data: claim, error: claimError } = await supabase.from("notification_deliveries").insert({ user_id: recipientId, task_id: task.id, subscription_id: subscription.id, reminder_at: reminderAt }).select("id").single();
         if (claimError?.code === "23505") continue;
         if (claimError || !claim) throw claimError || new Error("Unable to claim notification delivery.");

@@ -101,6 +101,10 @@ Generate the VAPID key pair with `npx web-push generate-vapid-keys`. Only the pu
 
 The GitHub Actions workflow `.github/workflows/notification-processor.yml` calls `/api/notifications/process` every five minutes with `CRON_SECRET` in the authorization header. This keeps the deployment compatible with Vercel Hobby, whose cron jobs can run only once per day. Add repository Actions secrets named `FLOWDESK_URL` (your production origin, such as `https://flowdesk.example.com`) and `CRON_SECRET` (the same value configured in Vercel). The processor uses `due_at` timestamps, sends each eligible reminder to every registered device, and records each task/reminder/subscription delivery to prevent duplicates.
 
+If the scheduled job fails with curl exit code 22, expand **Invoke protected notification processor** in the Actions log and read the response body. A `Missing VAPID configuration` response means the deployment is missing one or more of `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT`. Set them in Vercel for the environment serving `FLOWDESK_URL`, then redeploy (the public key is also embedded in the browser build). These VAPID values belong in the deployment, not just GitHub Actions secrets. Preserve an existing key pair; replacing it requires devices to subscribe again. Never put the private key in a `NEXT_PUBLIC_` variable or commit it.
+
+The processor only initializes Web Push when an eligible reminder has a registered device. Idle runs succeed without VAPID configuration; runs that need to send still fail with the missing variable names before recording a delivery. After configuring and redeploying, manually run **Process task notifications** and verify a due reminder on a subscribed device.
+
 Push requires HTTPS outside localhost. Browser and operating-system support varies; iOS Web Push generally requires an installed Home Screen web app and a supported iOS version. Browser permission must be granted through the Settings action.
 
 ### Linting
