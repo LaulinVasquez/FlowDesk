@@ -21,7 +21,13 @@ export function NotificationSettings() {
     if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) { setState("unsupported"); return; }
     setState(Notification.permission as Exclude<State, "loading" | "unsupported">);
     Promise.all([navigator.serviceWorker.register("/sw.js"), getDefaultReminder()]).then(async ([registration, preference]) => {
-      setMinutes(preference); setEnabled(!!(await registration.pushManager.getSubscription()));
+      setMinutes(preference);
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription && Notification.permission === "granted") {
+        // A browser subscription alone does not prove this account can receive push.
+        await savePushSubscription(subscription);
+        setEnabled(true);
+      }
     }).catch(() => setMessage("FlowDesk couldn't load notification settings."));
   }, []);
   const enable = async () => {
@@ -43,11 +49,27 @@ export function NotificationSettings() {
     catch { setMessage("FlowDesk couldn't disable notifications."); } finally { setPending(false); }
   };
   const updateMinutes = async (value: 15 | 60 | 1440) => { setMinutes(value); try { await setDefaultReminder(value); setMessage("Default reminder updated."); } catch { setMessage("FlowDesk couldn't update the reminder preference."); } };
-  const test = async () => { const registration = await navigator.serviceWorker.ready; registration.active?.postMessage({ type: "FLOWDESK_TEST_NOTIFICATION" }); };
+  const test = async () => {
+    setPending(true); setMessage("");
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      if (!subscription) { setEnabled(false); throw new Error("Enable notifications on this browser first."); }
+      await savePushSubscription(subscription);
+      const response = await fetch("/api/notifications/test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint: subscription.endpoint }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Test notification failed.");
+      setMessage("Test push sent. Check your browser or device notifications. Scheduled reminders also require the reminder scheduler to be running.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Test notification failed."); }
+    finally { setPending(false); }
+  };
   return <div className="notification-settings">
     <div className="settings-card"><div><strong>Browser notifications</strong><p>{state === "unsupported" ? "Notifications are not supported by this browser." : enabled ? "Enabled on this browser." : state === "denied" ? "Blocked in browser settings." : "Receive reminders when FlowDesk is not active."}</p></div><button className="btn secondary" disabled={pending || state === "unsupported" || state === "denied"} onClick={enabled ? disable : enable}>{pending ? <Loader2 className="spin"/> : enabled ? <BellOff/> : <Bell/>}{enabled ? "Disable" : "Enable notifications"}</button></div>
     <div className="settings-card"><div><strong>Default push reminder</strong><p>Used when a task inherits your default.</p></div><select value={minutes} onChange={event => updateMinutes(Number(event.target.value) as 15 | 60 | 1440)} disabled={state === "unsupported"}><option value={15}>15 minutes before</option><option value={60}>1 hour before</option><option value={1440}>1 day before</option></select></div>
-    {process.env.NODE_ENV === "development" && enabled && <div className="settings-card"><div><strong>Test notification</strong><p>Display a notification from the registered service worker.</p></div><button className="btn secondary" onClick={test}><Send/>Send test</button></div>}
+    {enabled && <div className="settings-card"><div><strong>Test notification</strong><p>Verify server push delivery to this browser.</p></div><button className="btn secondary" disabled={pending} onClick={test}><Send/>Send test</button></div>}
     {message && <p className="notification-message" role="status">{message}</p>}
   </div>;
 }

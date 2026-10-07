@@ -107,6 +107,10 @@ The processor only initializes Web Push when an eligible reminder has a register
 
 Push requires HTTPS outside localhost. Browser and operating-system support varies; iOS Web Push generally requires an installed Home Screen web app and a supported iOS version. Browser permission must be granted through the Settings action.
 
+In Settings, **Send test** now sends a real server push to the current browser in production too. It requires authentication, loads the saved subscription through user-scoped RLS, and reports missing deployment configuration or rejected push delivery. A successful test confirms the delivery path; it does not verify the scheduler. Settings restores the browser subscription in Supabase for the signed-in account before showing it as enabled.
+
+GitHub failure alerts are notifications about the scheduled Actions job, not task reminders sent to GitHub by FlowDesk. Fix the failing job using its response body; the workflow now explains missing Actions secrets and bounds network requests. The processor reports push failures instead of silently returning success, releases failed delivery claims for retry, and removes expired subscriptions. Disabling the scheduled workflow stops this scheduler from sending reminders. A task needs both a due date and a due time for scheduled push; date-only tasks still have in-app due indicators.
+
 ### Linting
 
 ```bash

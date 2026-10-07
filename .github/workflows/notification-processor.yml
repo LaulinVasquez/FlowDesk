@@ -19,8 +19,10 @@ jobs:
           FLOWDESK_URL: ${{ secrets['FLOWDESK_URL'] }}
           CRON_SECRET: ${{ secrets['CRON_SECRET'] }}
         run: |
-          test -n "$FLOWDESK_URL"
-          test -n "$CRON_SECRET"
-          curl --fail-with-body --silent --show-error --retry 2 \
+          if [ -z "$FLOWDESK_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Set FLOWDESK_URL and CRON_SECRET in repository Actions secrets. CRON_SECRET must match the production deployment."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --connect-timeout 15 --max-time 90 --retry 2 \
             -H "Authorization: Bearer $CRON_SECRET" \
             "${FLOWDESK_URL%/}/api/notifications/process"
