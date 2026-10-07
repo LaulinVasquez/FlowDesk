@@ -1,0 +1,28 @@
+name: Process task notifications
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: flowdesk-notification-processor
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invoke protected notification processor
+        env:
+          FLOWDESK_URL: ${{ secrets['FLOWDESK_URL'] }}
+          CRON_SECRET: ${{ secrets['CRON_SECRET'] }}
+        run: |
+          if [ -z "$FLOWDESK_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Set FLOWDESK_URL and CRON_SECRET in repository Actions secrets. CRON_SECRET must match the production deployment."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --connect-timeout 15 --max-time 90 --retry 2 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "${FLOWDESK_URL%/}/api/notifications/process"
